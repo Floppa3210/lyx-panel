@@ -2,126 +2,232 @@
 
 ![LyxPanel Banner](docs/banner.svg)
 
-Panel de administracion **open source** para FiveM/ESX, enfocado en seguridad server-side, auditoria real y permisos granulares.
+Panel de administracion **open source** para FiveM/ESX. Enfoque: seguridad server-side, auditoria real, permisos granulares y UX de staff.
 
-## Estado del proyecto
-- Licencia: `MIT`
-- Estado: `Activo`
-- Enfoque: `Comunidad primero` (gratis y libre)
-- Integracion recomendada: `lyx-guard`
+Este recurso esta pensado para funcionar **junto a** `lyx-guard`.
+Puede correr solo, pero para seguridad y cobertura completas se recomienda tener ambos activos (y varias funciones se degradan o se deshabilitan si falta el otro).
 
-## Que incluye
-- Panel NUI completo: jugadores, economia, vehiculos, reportes, bans, auditoria y permisos.
-- Matriz de permisos por rol/usuario editable desde UI (sin tocar JSON/CFG complejos).
-- Firewall de eventos para acciones admin criticas:
-  - permiso
-  - rate-limit
-  - schema validation
-  - token + nonce + anti-replay
-- Auditoria avanzada con filtros y export `JSON/CSV`.
-- Tickets de soporte in-game:
-  - jugadores: comando `/ticket`
-  - staff: gestion desde la pestaña **Tickets** (asignar, responder, cerrar, reabrir)
-- Presets de admin:
-  - self presets
-  - vehicle builds
-  - favoritos de vehiculos
-  - historial de spawn
-- Modo simulacion (`dry-run`) para acciones destructivas.
+## Tabla de contenido
+1. Instalacion
+2. Configuracion (defaults)
+3. Seguridad (modelo y garantias)
+4. Permisos
+5. Tickets in-game
+6. Observabilidad (logs/auditoria)
+7. Perfiles de runtime
+8. Troubleshooting
+9. QA offline
+10. Mapa del proyecto
+11. Docs
 
 ## Requisitos
 - FiveM (artefacto actualizado).
 - `es_extended`
 - `oxmysql`
-- Opcional recomendado: `lyx-guard`
+- Recomendado: `lyx-guard`
 
-## Instalacion rapida
-1. Copiar `lyx-panel` a `resources/[local]/lyx-panel`.
-2. En `server.cfg`:
+## Instalacion (paso a paso)
+1. Copiar carpeta `lyx-panel` a:
+   - `resources/[local]/lyx-panel`
+2. Asegurar orden en `server.cfg`:
 ```cfg
 ensure oxmysql
 ensure es_extended
+ensure lyx-guard
 ensure lyx-panel
 ```
-3. Reiniciar servidor.
-4. Verificar consola: migraciones/callbacks/event firewall.
+3. Reiniciar el servidor.
+4. Verificar consola:
+   - que `oxmysql` este listo
+   - que las migraciones corran sin errores (LyxPanel aplica migraciones versionadas)
+   - que el firewall de eventos este activo
 
-## Configuracion
-- Archivo principal: `config.lua`
-- Acceso panel:
+## Configuracion (defaults importantes)
+Archivo: `config.lua`
+
+### Acceso al panel
 ```lua
 Config.OpenCommand = 'lyxpanel'
 Config.OpenKey = 'F7'
 ```
-- Seguridad:
+
+### Perfil de runtime (tuning)
+```lua
+-- Valores: rp_light | production_high_load | hostile
+Config.RuntimeProfile = 'production_high_load'
+```
+
+### Seguridad: firewall de eventos admin
+Defaults (recomendados):
 ```lua
 Config.Security.adminEventFirewall.enabled = true
 Config.Security.adminEventFirewall.requireActiveSession = true
+```
 
--- En entorno hostil, cerrar mas:
+Modo hostil (mas cerrado):
+```lua
 Config.RuntimeProfile = 'hostile'
+
+-- En hostile: si no se puede validar la sesion, se bloquea (fail-closed)
 Config.Security.adminEventFirewall.sessionStateFailOpen = false
 ```
 
-## Tickets (soporte)
+### Limites / cooldowns
+Los cooldowns y clamps estan centralizados en `config.lua` (ActionLimits / Security.*).
+
+## Seguridad (modelo y garantias)
+Principios:
+- **Server-authoritative**: el servidor decide; el cliente solo pide.
+- Ninguna accion critica depende de logica cliente.
+- Todo evento critico se valida con 3 capas obligatorias:
+  - permiso
+  - rate-limit
+  - schema validation (tipo/rango/longitud/profundidad)
+
+Anti-spoof:
+- Acciones `lyxpanel:action:*` usan un envelope con `token + nonce` y **anti-replay**.
+- Si un cheater intenta ejecutar un evento admin sin permisos/sesion/nonce valido, se bloquea.
+- Con `lyx-guard` activo, intentos de spoof pueden escalar a sancion segun perfil.
+
+## Permisos
+LyxPanel usa permisos granulares y soporta:
+- permisos por rol (role permissions)
+- permisos individuales por usuario (individual permissions)
+- auditoria de cambios
+
+En el panel (UI) existe una matriz visual para editar permisos sin tocar JSON/CFG.
+
+Permisos ejemplo:
+- `canBan`, `canUnban`
+- `canWipePlayer` (permiso dedicado, no reutiliza `canBan`)
+- `canManageTickets` (assign/reply/close/reopen)
+- `canUseTickets` (ver/listar)
+
+## Tickets in-game
 Jugadores:
-- Crear ticket: `/ticket asunto | mensaje` (o `/ticket mensaje`)
+- Crear ticket:
+  - `/ticket asunto | mensaje`
+  - o `/ticket mensaje`
 
-Staff (panel -> Tickets):
-- Asignar a un admin
-- Responder (se guarda en historial)
-- Cerrar / Reabrir
+Staff (UI -> pestaña Tickets):
+- asignar a un admin
+- responder (se guarda como historial en `admin_response`)
+- cerrar / reabrir
 
-Permisos recomendados:
-- `canUseTickets`: ver/listar
-- `canManageTickets`: asignar/responder/cerrar
+Seguridad:
+- todo el workflow de tickets pasa por `lyxpanel:action:*` (permiso + rate + schema + anti-replay)
+- limites de longitud configurables
 
-## Arquitectura
-```mermaid
-flowchart LR
-  UI[HTML/CSS/JS NUI] --> CL[client/main.lua]
-  CL --> SV[server/actions + firewall]
-  SV --> DB[(oxmysql)]
-  SV --> AUD[Auditoria/Logs]
-  SV --> GUARD[lyx-guard opcional]
-```
+## Observabilidad (logs y auditoria)
+LyxPanel registra:
+- admin + accion + target + resultado
+- correlation_id para trazabilidad
+- export paginado desde UI en JSON/CSV (auditoria)
 
-## Modelo de seguridad
-- El servidor es autoridad final.
-- Ninguna accion critica se confia al cliente.
-- Todos los eventos `lyxpanel:action:*` pasan por validacion previa.
-- Eventos spoofeados sin permisos pueden escalar a sancion via guard.
+Integracion con LyxGuard (recomendado):
+- correlacion panel + detecciones/sanciones del guard
+- evidencia y timeline (si esta habilitado en guard)
 
-## Logs y auditoria
-- Registro por admin/target/accion/resultado.
-- Correlation ID para trazabilidad.
-- Export paginado desde la UI para revisiones.
+## Perfiles de runtime
+Valores:
+- `rp_light`: tolerante, menos agresivo
+- `production_high_load`: para servidores con picos altos de eventos
+- `hostile`: mas cerrado, pensado para entornos con spoof/flood
 
-## QA offline (recomendado antes de release)
+Guia con valores exactos:
+- `docs/operations/PRODUCCION_ALTA_CARGA.md`
+
+## Troubleshooting (comun)
+1. No abre el panel:
+   - verificar `Config.OpenKey` / `Config.OpenCommand`
+   - revisar permisos del jugador
+2. No corren migraciones:
+   - confirmar `oxmysql` antes de `lyx-panel`
+   - revisar credenciales DB y logs de MySQL
+3. Acciones bloqueadas por firewall:
+   - revisar `Config.Security.adminEventFirewall.*`
+   - en entorno hostil, validar que la sesion este activa (fail-closed)
+
+## QA offline (antes de release)
 ```bash
 node tools/qa/check_events.js
 ```
 
-## Si queres aportar
-Toda contribucion suma. Para mantener calidad:
-1. Crear rama por feature/fix.
-2. Mantener cambios acotados y testeables.
-3. Incluir validaciones server-side en cada accion nueva.
-4. Actualizar docs/config cuando aplique.
+## Mapa del proyecto (estructura)
+```text
+lyx-panel/
+  fxmanifest.lua
+  config.lua
+  database_extended.sql
+  README.md
+  LICENSE
+  SECURITY.md
+  CONTRIBUTING.md
+  .gitignore
+
+  client/
+    main.lua
+    features_v45.lua
+    staff_commands.lua
+    toggles.lua
+    spectate.lua
+    freecam.lua
+    zones.lua
+    client_extended.lua
+
+  server/
+    main.lua
+    actions.lua
+    actions_extended.lua
+    event_firewall.lua
+    migrations.lua
+    reports.lua
+    tickets.lua
+    presets.lua
+    permissions_store.lua
+    access_store.lua
+    staff_commands.lua
+    bootstrap.lua
+    features_v45.lua
+
+  shared/
+    lib.lua
+
+  html/
+    index.html
+    css/style.css
+    js/app.js
+    js/app_extended.js
+    vendor/fontawesome/...
+
+  tools/
+    qa/check_events.js
+
+  docs/
+    banner.svg
+    operations/PRODUCCION_ALTA_CARGA.md
+    pack_parity/PACK_PARITY_PASS1.md
+    pack_parity/PACK_PARITY_PASS2.md
+    pack_parity/PACK_PARITY_PASS3.md
+    pack_parity/PACK_PARITY_PASS4.md
+```
+
+## Docs
+- Perfil produccion alta carga: `docs/operations/PRODUCCION_ALTA_CARGA.md`
+- Pack parity (comparativa, no SaaS): `docs/pack_parity/PACK_PARITY_PASS1.md`
+- Evidencia tecnica: `docs/pack_parity/PACK_PARITY_PASS2.md`
+- Brechas/riesgos: `docs/pack_parity/PACK_PARITY_PASS3.md`
+- Plan de cierre: `docs/pack_parity/PACK_PARITY_PASS4.md`
+
+## Contribuir
+Toda contribucion suma:
+- cambios pequenos y revisables
+- cada accion nueva: permiso + rate-limit + schema + auditoria
 
 Ver:
 - `CONTRIBUTING.md`
 - `SECURITY.md`
 
-## Roadmap
-- Usar Issues/PRs del repo para el backlog y el progreso.
-
-## Checklist de release recomendado
-- Migraciones OK
-- Firewall y schemas OK
-- Permisos y rate-limit OK
-- Logs/Auditoria OK
-- Rollback plan definido
-
 ## Licencia
 MIT. Ver `LICENSE`.
+
