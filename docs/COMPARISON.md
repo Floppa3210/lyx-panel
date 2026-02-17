@@ -1,4 +1,4 @@
-# LyxPanel - Comparaciones y Alcance
+﻿# LyxPanel - Comparaciones y Alcance
 
 Este documento compara el enfoque de LyxPanel con:
 - paneles open source 
@@ -39,6 +39,20 @@ En varios ejemplos (de internet) se repiten patrones peligrosos:
 - codigo descargado por HTTP y ejecutado
 - ofuscacion y dominios raros
 
+Observacion basada en nuestro scan local (carpetas de ejemplos):
+- se detectaron decenas de coincidencias HIGH asociadas a patrones de loader/exec remoto
+- tambien hubo muchos matches MED/LOW de ofuscacion, URLs sospechosas y code smells
+
+Numeros (scan local):
+- archivos marcados: 147
+- coincidencias HIGH: 106
+- coincidencias MED: 821
+- coincidencias LOW: 106
+
+Conclusion practica:
+- no conviene "copiar y pegar" codigo de paneles/menus publicos
+- si se rescatan ideas, que sea solo UX/estructura y reescribir la logica de seguridad desde cero
+
 LyxPanel evita eso:
 - no hace exec remoto
 - no hace loaders
@@ -59,17 +73,24 @@ Si en el futuro se arma un web panel externo:
 - recomendado: repo separado, API segura y sin mezclar con el core del recurso.
 
 ## 5) Comparacion con FiveGuard (enfoque y conceptos)
-Referencia conceptual:
-- FiveGuard y anticheats similares suelen endurecer eventos y "safe events" con tokens/identidad.
+Referencia (publica) y conceptual:
+- FiveGuard y anticheats similares suelen tener un sistema de "safe events" donde el cliente adjunta un **token** a los eventos y el servidor valida ese token antes de ejecutar handlers sensibles.
 
-Puntos comparables con LyxPanel:
+Detalles publicos (resumen):
+- En guias publicas de FiveGuard se describe que un "safe event" se valida usando un token que viaja dentro de los argumentos del evento (en algunos ejemplos, como ultimo argumento).
+- FiveGuard expone APIs/exports para consultar tokens del jugador y registrar eventos como "safe".
+
+Puntos comparables con LyxPanel (cuando corre junto a LyxGuard):
 - hardening de eventos admin
-- tokenizacion/anti-replay
-- rate-limits y controles de payload
+- tokenizacion por accion + nonce + anti-replay
+- rate-limits y controles de payload (schema)
 
 Diferencia de arquitectura:
-- LyxPanel es panel in-game con server-authority.
+- LyxPanel es un panel in-game (NUI) y su seguridad se centra en acciones de staff.
 - La cobertura anticheat profunda y sancion escalada es rol de `lyx-guard`.
+
+Nota importante:
+- Sistemas de safe-events basados en "hookear" TriggerServerEvent o auto-registrar eventos pueden generar falsos positivos si otros recursos disparan eventos legitimos sin token. El enfoque recomendado es: server-side strict + allowlist + schema + rate-limit, y usar tokens/nonce solo para acciones realmente criticas.
 
 ## 6) Objetivo de calidad (para mantener nivel "pro")
 Para que un panel sea "pro" en un entorno hostil:
@@ -79,4 +100,8 @@ Para que un panel sea "pro" en un entorno hostil:
 - no debe existir "bypass por evento" para cheaters (spoof)
 
 LyxPanel asume ese contrato y delega el enforcement extra a LyxGuard cuando esta presente.
+
+## 7) Referencias (lectura opcional)
+- FiveGuard (safe events): https://docs.fiveguard.net/guides/safe-events
+- Tokenizacion open source (idea similar): https://github.com/BrunoTheDev/salty_tokenizer
 

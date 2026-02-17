@@ -43,6 +43,20 @@ Tablas principales (resumen):
 ## 5) Configuracion basica (defaults)
 Archivo: `config.lua`
 
+### 5.0 Defaults del recurso (stock)
+Estos valores vienen por defecto en el repo (pueden variar si cambias `Config.RuntimeProfile` o presets):
+- `Config.Locale = 'es'`
+- `Config.Debug = false`
+- `Config.OpenCommand = 'lyxpanel'`
+- `Config.OpenKey = 'F6'`
+- `Config.RefreshInterval = 5000`
+- `Config.RuntimeProfile = 'default'`
+- `Config.Security.adminEventFirewall.enabled = true`
+- `Config.Security.adminEventFirewall.requireActiveSession = true`
+- `Config.Security.adminEventFirewall.sessionStateFailOpen = true`
+- `Config.Security.adminEventFirewall.permabanOnNoAccess = true`
+- `Config.Security.panelSessionSpoof.enabled = true`
+
 ### 5.1 Abrir panel
 ```lua
 Config.OpenCommand = 'lyxpanel'
@@ -142,3 +156,9 @@ Si `lyx-guard` NO esta activo:
 - permisos granulares (no roles "todo o nada")
 - revisar logs/auditoria post deploy
 
+## 11) Desinstalacion / rollback
+1. Sacar de `server.cfg`:
+   - `ensure lyx-panel`
+2. Reiniciar.
+3. (Opcional) conservar DB para auditoria historica. Si queres borrar:
+   - eliminar tablas `lyxpanel_*` manualmente (recomendado hacerlo con cuidado).
