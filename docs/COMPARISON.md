@@ -33,7 +33,7 @@ LyxPanel endurece el camino critico:
 - aplica siempre las 3 capas + envelope anti-replay
 - registra auditoria por defecto
 
-## 3) Lo que vimos en ejemplos locales (adminpanel-copiar)
+## 3) Lo que vi en ejemplos de otro github/leaks
 En varios ejemplos (de internet) se repiten patrones peligrosos:
 - ejecucion dinamica de codigo (`load`, `loadstring`, `assert(load(...))`)
 - codigo descargado por HTTP y ejecutado
