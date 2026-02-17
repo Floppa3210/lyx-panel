@@ -517,26 +517,9 @@ function act(a, extra) {
   sendAction(d);
 }
 
-// Confirmation dialog function
-function showConfirm(title, message, onConfirm) {
-  const modal = document.createElement("div");
-  modal.className = "confirm-modal-overlay";
-  modal.innerHTML = `
-        <div class="confirm-modal">
-            <h3>${title}</h3>
-            <p>${message}</p>
-            <div class="confirm-modal-buttons">
-                <button class="btn btn-secondary" onclick="this.closest('.confirm-modal-overlay').remove()">Cancelar</button>
-                <button class="btn btn-danger" id="confirmBtn">Confirmar</button>
-            </div>
-        </div>
-    `;
-  document.body.appendChild(modal);
-  modal.querySelector("#confirmBtn").onclick = () => {
-    onConfirm();
-    modal.remove();
-  };
-}
+// NOTE:
+// showConfirm() is implemented later with the unified modal system.
+// Keep a single implementation to avoid behavior drift.
 
 function sendAction(d) {
   if (typeof NUISecurity !== "undefined" && !NUISecurity.canSendRequest()) {
@@ -1421,6 +1404,12 @@ document.querySelectorAll(".nav-item").forEach((item) => {
     if (page === "bans") loadBans();
     if (page === "reports") loadReports();
     if (page === "logs") loadLogs();
+    if (page === "tools") {
+      if (typeof loadSelfPresets === "function") loadSelfPresets();
+      if (typeof loadVehicleBuilds === "function") loadVehicleBuilds();
+      if (typeof loadVehicleFavorites === "function") loadVehicleFavorites();
+      if (typeof loadVehicleSpawnHistory === "function") loadVehicleSpawnHistory();
+    }
   };
 });
 
@@ -1738,23 +1727,23 @@ if (savedTheme === "custom") {
 const trollActions = [
   { id: "troll_explode", label: "Explosion", icon: "bomb" },
   { id: "troll_fire", label: "Fuego", icon: "fire" },
-  { id: "troll_launch", label: "Lanzar", icon: "rocket" },
+  { id: "troll_launch", label: "Lanzar", icon: "rocket", input: { key: "force", label: "Fuerza de lanzamiento (1-200)", placeholder: "50", def: "50", min: 1, max: 200 } },
   { id: "troll_ragdoll", label: "Ragdoll", icon: "person-falling" },
-  { id: "troll_drunk", label: "Borracho", icon: "wine-glass" },
-  { id: "troll_drug", label: "Drogas", icon: "pills" },
-  { id: "troll_blackscreen", label: "Pantalla", icon: "rectangle-xmark" },
+  { id: "troll_drunk", label: "Borracho", icon: "wine-glass", input: { key: "duration", label: "Duracion (segundos)", placeholder: "30", def: "30", min: 1, max: 300 } },
+  { id: "troll_drug", label: "Drogas", icon: "pills", input: { key: "duration", label: "Duracion (segundos)", placeholder: "20", def: "20", min: 1, max: 300 } },
+  { id: "troll_blackscreen", label: "Pantalla", icon: "rectangle-xmark", input: { key: "duration", label: "Duracion (segundos)", placeholder: "10", def: "10", min: 1, max: 60 } },
   { id: "troll_scream", label: "Susto", icon: "ghost" },
   { id: "troll_randomtp", label: "TP Random", icon: "location-dot" },
   { id: "troll_strip", label: "Ropa", icon: "shirt" },
-  { id: "troll_invert", label: "Invertir", icon: "arrows-rotate" },
+  { id: "troll_invert", label: "Invertir", icon: "arrows-rotate", input: { key: "duration", label: "Duracion (segundos)", placeholder: "15", def: "15", min: 1, max: 300 } },
   { id: "troll_chicken", label: "Pollo", icon: "kiwi-bird" },
   { id: "troll_dance", label: "Bailar", icon: "music" },
   // Nuevos trolls avanzados
-  { id: "troll_invisible", label: "Invisible", icon: "eye-slash" },
-  { id: "troll_spin", label: "Girar", icon: "rotate" },
-  { id: "troll_shrink", label: "Enano", icon: "minimize" },
-  { id: "troll_giant", label: "Gigante", icon: "maximize" },
-  { id: "troll_clones", label: "Clones", icon: "users" },
+  { id: "troll_invisible", label: "Invisible", icon: "eye-slash", input: { key: "duration", label: "Duracion (segundos)", placeholder: "30", def: "30", min: 1, max: 300 } },
+  { id: "troll_spin", label: "Girar", icon: "rotate", input: { key: "duration", label: "Duracion (segundos)", placeholder: "15", def: "15", min: 1, max: 120 } },
+  { id: "troll_shrink", label: "Enano", icon: "minimize", input: { key: "duration", label: "Duracion (segundos)", placeholder: "60", def: "60", min: 1, max: 600 } },
+  { id: "troll_giant", label: "Gigante", icon: "maximize", input: { key: "duration", label: "Duracion (segundos)", placeholder: "30", def: "30", min: 1, max: 300 } },
+  { id: "troll_clones", label: "Clones", icon: "users", input: { key: "count", label: "Cantidad de clones (1-10)", placeholder: "5", def: "5", min: 1, max: 10 } },
 ];
 
 function buildTrollActions() {
@@ -1766,15 +1755,42 @@ function buildTrollActions() {
       (t) =>
         `<button class="player-action-btn troll" onclick="trollAction('${t.id}')">
             <i class="fas fa-${t.icon}"></i>${t.label}
+            ${t.input ? '<small class="muted">Configurable</small>' : ''}
         </button>`
     )
     .join("");
 }
 
 function trollAction(actionId) {
+  const actionCfg = trollActions.find((t) => t.id === actionId);
   if (!selectedPlayer) return showToast("error", "No hay jugador seleccionado");
-  sendAction({ action: actionId, targetId: selectedPlayer.id });
-  showToast("success", "Troll aplicado");
+
+  const send = (extra = {}) => {
+    sendAction({ action: actionId, targetId: selectedPlayer.id, ...extra });
+    showToast("success", "Accion troll enviada");
+  };
+
+  if (actionCfg && actionCfg.input) {
+    const i = actionCfg.input;
+    showInput(
+      actionCfg.label,
+      i.label || "Valor",
+      (raw) => {
+        let val = parseInt(raw, 10);
+        if (!Number.isFinite(val)) val = parseInt(i.def, 10) || 0;
+        val = Math.max(i.min || 0, Math.min(i.max || 9999, val));
+        send({ [i.key]: val });
+      },
+      {
+        placeholder: i.placeholder || "",
+        defaultValue: i.def || "",
+        submitText: "Aplicar",
+      }
+    );
+    return;
+  }
+
+  send();
 }
 // -----------------------------------------------------------------------------
 // REPORTS WITH TP AND CHAT
@@ -2192,6 +2208,16 @@ const CommandPalette = {
       p.classList.remove('active');
       if (p.id === `page-${page}`) p.classList.add('active');
     });
+    if (page === "detections") loadDetections();
+    if (page === "bans") loadBans();
+    if (page === "reports") loadReports();
+    if (page === "logs") loadLogs();
+    if (page === "tools") {
+      if (typeof loadSelfPresets === "function") loadSelfPresets();
+      if (typeof loadVehicleBuilds === "function") loadVehicleBuilds();
+      if (typeof loadVehicleFavorites === "function") loadVehicleFavorites();
+      if (typeof loadVehicleSpawnHistory === "function") loadVehicleSpawnHistory();
+    }
     this.close();
   },
 

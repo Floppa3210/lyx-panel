@@ -1,15 +1,4 @@
---[[
-    ██╗  ██╗   ██╗██╗  ██╗    ██████╗  █████╗ ███╗   ██╗███████╗██╗
-    ██║  ╚██╗ ██╔╝╚██╗██╔╝    ██╔══██╗██╔══██╗████╗  ██║██╔════╝██║
-    ██║   ╚████╔╝  ╚███╔╝     ██████╔╝███████║██╔██╗ ██║█████╗  ██║
-    ██║    ╚██╔╝   ██╔██╗     ██╔═══╝ ██╔══██║██║╚██╗██║██╔══╝  ██║
-    ███████╗██║   ██╔╝ ██╗    ██║     ██║  ██║██║ ╚████║███████╗███████╗
-    ╚══════╝╚═╝   ╚═╝  ╚═╝    ╚═╝     ╚═╝  ╚═╝╚═╝  ╚═══╝╚══════╝╚══════╝
-
-    LyxPanel - Premium Admin Panel for FiveM/ESX
-    Version: 2.0.0
-    Author: LyxDev
-]]
+-- LyxPanel - Admin Panel for FiveM/ESX
 
 fx_version 'cerulean'
 game 'gta5'
@@ -17,8 +6,8 @@ lua54 'yes'
 
 name 'lyx-panel'
 author 'LyxDev'
-description 'Premium Admin Panel for FiveM/ESX Servers - Complete Edition'
-version '4.5.0'
+description 'Panel de administracion para servidores FiveM/ESX'
+version '4.5.1'
 
 shared_scripts {
     '@es_extended/imports.lua',
@@ -28,7 +17,7 @@ shared_scripts {
 
 server_scripts {
     '@oxmysql/lib/MySQL.lua',
-    -- Load order is important: bootstrap/migrations/perms first, then core, then feature modules.
+    -- Orden recomendado: bootstrap/migraciones/permisos, luego modulos core.
     'server/bootstrap.lua',
     'server/migrations.lua',
     'server/permissions_store.lua',
@@ -38,6 +27,7 @@ server_scripts {
     'server/actions.lua',
     'server/actions_extended.lua',
     'server/features_v45.lua',
+    'server/presets.lua',
     'server/reports.lua',
     'server/staff_commands.lua'
 }
@@ -52,6 +42,8 @@ files {
     'html/index.html',
     'html/css/*.css',
     'html/js/*.js',
+    'html/vendor/fontawesome/css/*.css',
+    'html/vendor/fontawesome/webfonts/*',
     'html/img/*.png',
     'html/fonts/*'
 }

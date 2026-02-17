@@ -923,6 +923,19 @@ RegisterNetEvent('lyxpanel:action:spawnVehicle', function(targetId, model)
     TriggerClientEvent('lyxpanel:spawnVehicle', target, model)
     LogAction(GetId(s, 'license'), GetPlayerName(s), 'SPAWN_VEHICLE', GetId(target, 'license'), GetPlayerName(target),
         { model = model })
+
+    -- Track spawn history for admin UX (favorites/history). Best-effort only.
+    if exports and exports['lyx-panel'] and exports['lyx-panel'].TrackVehicleSpawnHistory then
+        pcall(function()
+            exports['lyx-panel']:TrackVehicleSpawnHistory(
+                s,
+                model,
+                model,
+                GetId(target, 'license'),
+                GetPlayerName(target)
+            )
+        end)
+    end
     TriggerClientEvent('lyxpanel:notify', s, 'success', 'Vehiculo: ' .. model)
 end)
 

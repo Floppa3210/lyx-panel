@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="320" viewBox="0 0 1280 320" role="img" aria-label="LyxPanel banner">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0f172a"/>
+      <stop offset="50%" stop-color="#0b253d"/>
+      <stop offset="100%" stop-color="#1a2e4d"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#2f95ff"/>
+      <stop offset="55%" stop-color="#29d0c5"/>
+      <stop offset="100%" stop-color="#ff8a3d"/>
+    </linearGradient>
+  </defs>
+  <rect width="1280" height="320" fill="url(#bg)"/>
+  <circle cx="1110" cy="70" r="130" fill="#2f95ff" opacity="0.15"/>
+  <circle cx="960" cy="260" r="180" fill="#29d0c5" opacity="0.12"/>
+  <rect x="58" y="64" width="66" height="66" rx="14" fill="url(#accent)"/>
+  <path d="M91 80l15 15v19c0 13-12 24-24 27-12-3-24-14-24-27V95l15-15h18z" fill="#fff"/>
+  <text x="148" y="97" fill="#dbeafe" font-family="Segoe UI, Arial, sans-serif" font-size="46" font-weight="700">LyxPanel</text>
+  <text x="150" y="134" fill="#93c5fd" font-family="Segoe UI, Arial, sans-serif" font-size="20">Panel de administración para FiveM / ESX</text>
+  <rect x="150" y="167" width="308" height="34" rx="17" fill="#1e293b" stroke="#334155"/>
+  <text x="173" y="189" fill="#cbd5e1" font-family="Segoe UI, Arial, sans-serif" font-size="14">Seguridad server-side + auditoría + permisos granulares</text>
+  <rect x="150" y="216" width="170" height="36" rx="10" fill="url(#accent)"/>
+  <text x="181" y="239" fill="#fff" font-family="Segoe UI, Arial, sans-serif" font-size="15" font-weight="700">Open Source</text>
+  <rect x="333" y="216" width="180" height="36" rx="10" fill="#111827" stroke="#334155"/>
+  <text x="361" y="239" fill="#dbeafe" font-family="Segoe UI, Arial, sans-serif" font-size="15">Comunidad First</text>
+</svg>

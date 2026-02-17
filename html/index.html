@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="css/style.css" />
     <link
       rel="stylesheet"
-      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+      href="vendor/fontawesome/css/all.min.css"
     />
   </head>
 
@@ -1112,6 +1112,101 @@
               <button class="btn btn-primary btn-full" onclick="changeModel()">
                 Cambiar
               </button>
+            </div>
+
+            <!-- Presets (Self) -->
+            <div class="tool-card tool-card-wide">
+              <h3><i class="fas fa-bookmark"></i> Self Presets</h3>
+              <p class="muted">
+                Guardar/cargar configuraciones personales (vida/armadura/toggles).
+              </p>
+              <div class="row" style="gap: 10px; align-items: center">
+                <input
+                  type="text"
+                  id="selfPresetName"
+                  placeholder="Nombre del preset (ej: patrulla)"
+                  class="input-full"
+                />
+                <button class="btn btn-primary" onclick="saveSelfPreset()">
+                  <i class="fas fa-floppy-disk"></i> Guardar
+                </button>
+                <button class="btn btn-secondary" onclick="loadSelfPresets()">
+                  <i class="fas fa-sync-alt"></i> Recargar
+                </button>
+              </div>
+              <div id="selfPresetsList" class="preset-list"></div>
+            </div>
+
+            <!-- Vehicle Builds -->
+            <div class="tool-card tool-card-wide">
+              <h3><i class="fas fa-wand-magic-sparkles"></i> Vehicle Builds</h3>
+              <p class="muted">
+                Guardar/Aplicar tuning, colores, extras, neon y performance.
+              </p>
+              <div class="row" style="gap: 10px; align-items: center">
+                <input
+                  type="text"
+                  id="vehicleBuildName"
+                  placeholder="Nombre del build (ej: drift_azul)"
+                  class="input-full"
+                />
+                <button class="btn btn-primary" onclick="saveVehicleBuild()">
+                  <i class="fas fa-floppy-disk"></i> Guardar build actual
+                </button>
+                <button class="btn btn-secondary" onclick="loadVehicleBuilds()">
+                  <i class="fas fa-sync-alt"></i> Recargar
+                </button>
+              </div>
+              <div id="vehicleBuildsList" class="preset-list"></div>
+            </div>
+
+            <!-- Vehicle Favorites -->
+            <div class="tool-card tool-card-wide">
+              <h3><i class="fas fa-star"></i> Favoritos de Vehículos</h3>
+              <p class="muted">
+                Guarda modelos que usas seguido (custom packs incluidos).
+              </p>
+              <div class="row" style="gap: 10px; align-items: center">
+                <input
+                  type="text"
+                  id="vehicleFavoriteModel"
+                  placeholder="Modelo (ej: sultanrs)"
+                  class="input-full"
+                />
+                <input
+                  type="text"
+                  id="vehicleFavoriteLabel"
+                  placeholder="Label opcional (ej: Sultan RS)"
+                  class="input-full"
+                />
+                <button class="btn btn-primary" onclick="addVehicleFavorite()">
+                  <i class="fas fa-plus"></i> Agregar
+                </button>
+                <button class="btn btn-secondary" onclick="loadVehicleFavorites()">
+                  <i class="fas fa-sync-alt"></i> Recargar
+                </button>
+              </div>
+              <div id="vehicleFavoritesList" class="preset-list"></div>
+            </div>
+
+            <!-- Vehicle Spawn History -->
+            <div class="tool-card tool-card-wide">
+              <h3><i class="fas fa-clock-rotate-left"></i> Historial de Spawn</h3>
+              <p class="muted">
+                Ultimos spawns hechos por vos (para repetir rapido).
+              </p>
+              <div class="row" style="gap: 10px; align-items: center">
+                <select id="vehicleSpawnHistoryLimit" class="input-full">
+                  <option value="25">25</option>
+                  <option value="50" selected>50</option>
+                  <option value="100">100</option>
+                  <option value="200">200</option>
+                </select>
+                <button class="btn btn-secondary" onclick="loadVehicleSpawnHistory()">
+                  <i class="fas fa-sync-alt"></i> Recargar
+                </button>
+              </div>
+              <div id="vehicleSpawnHistoryList" class="preset-list"></div>
             </div>
           </div>
         </section>

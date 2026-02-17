@@ -1257,6 +1257,407 @@
     });
   }
 
+  // ---------------------------------------------------------------------------
+  // v4.7 - Presets / Vehicle Pro Tools (UI wiring)
+  // ---------------------------------------------------------------------------
+
+  function hasPerm(key) {
+    try {
+      if (typeof window.perm === 'function') return window.perm(key) === true;
+    } catch (_) {}
+    try {
+      if (window.adminPerms && typeof window.adminPerms === 'object') {
+        return window.adminPerms[key] === true;
+      }
+    } catch (_) {}
+    return false;
+  }
+
+  function sendPanelAction(payload) {
+    if (typeof window.sendAction === 'function') {
+      window.sendAction(payload || {});
+      return;
+    }
+    if (typeof window.sendNUI === 'function') {
+      window.sendNUI(payload || {});
+      return;
+    }
+    if (typeof window.postNuiJson === 'function') {
+      window.postNuiJson('action', payload || {});
+    }
+  }
+
+  function setListHtml(id, html) {
+    const el = document.getElementById(id);
+    if (!el) return false;
+    el.innerHTML = html;
+    return true;
+  }
+
+  function renderEmpty(id, text) {
+    setListHtml(id, `<div class="preset-empty">${esc(text || 'Sin datos')}</div>`);
+  }
+
+  function safeNowLabel(row) {
+    const parts = [];
+    const updated = row && (row.updated_at || row.updatedAt);
+    const created = row && (row.created_at || row.createdAt);
+    const when = updated || created;
+    if (when) parts.push(String(when));
+    const id = row && row.id;
+    if (id) parts.push(`ID ${id}`);
+    return sanitizeUiText(parts.join(' · '));
+  }
+
+  async function loadSelfPresets() {
+    if (!document.getElementById('selfPresetsList')) return;
+    if (!hasPerm('canManagePresets')) {
+      renderEmpty('selfPresetsList', 'Sin permiso para administrar presets.');
+      return;
+    }
+
+    setListHtml('selfPresetsList', '<div class="preset-empty">Cargando...</div>');
+    const resp = await nuiJson('getSelfPresets', {});
+    const rows = Array.isArray(resp) ? resp : [];
+
+    if (!rows.length) {
+      renderEmpty('selfPresetsList', 'No hay presets guardados.');
+      return;
+    }
+
+    const html = rows
+      .map((p) => {
+        const id = toInt(p.id, 0);
+        const name = sanitizeUiText(p.name || `preset_${id}`) || `preset_${id}`;
+        const nameEnc = encodeURIComponent(name);
+        const meta = safeNowLabel(p);
+        return `
+          <div class="preset-item">
+            <div class="preset-meta">
+              <div class="preset-name">${esc(name)}</div>
+              <div class="preset-sub">${esc(meta)}</div>
+            </div>
+            <div class="preset-actions">
+              <button class="btn btn-sm btn-primary" onclick="applySelfPreset(${id})">
+                <i class="fas fa-play"></i> Aplicar
+              </button>
+              <button class="btn btn-sm btn-danger" onclick="deleteSelfPreset(${id}, '${nameEnc}')">
+                <i class="fas fa-trash"></i>
+              </button>
+            </div>
+          </div>
+        `;
+      })
+      .join('');
+
+    setListHtml('selfPresetsList', html);
+  }
+
+  async function saveSelfPreset() {
+    if (!hasPerm('canManagePresets')) {
+      notify('error', 'Sin permiso para administrar presets.');
+      return;
+    }
+
+    const name = getValue('selfPresetName').trim();
+    if (!name) {
+      notify('error', 'Ingresa un nombre de preset.');
+      return;
+    }
+
+    const snap = await nuiJson('getSelfSnapshot', {});
+    if (!snap || snap.ok !== true || typeof snap.snapshot !== 'object') {
+      notify('error', 'No se pudo obtener snapshot (cliente).');
+      return;
+    }
+
+    sendPanelAction({ action: 'saveSelfPreset', name, data: snap.snapshot });
+    notify('success', 'Guardando preset...');
+    setTimeout(loadSelfPresets, 450);
+  }
+
+  function deleteSelfPreset(presetId, nameEnc) {
+    if (!hasPerm('canManagePresets')) return;
+    const id = toInt(presetId, 0);
+    if (id <= 0) return;
+    const name = nameEnc ? sanitizeUiText(decodeURIComponent(String(nameEnc))) : `#${id}`;
+
+    const run = () => {
+      sendPanelAction({ action: 'deleteSelfPreset', presetId: id });
+      notify('warning', 'Eliminando preset...');
+      setTimeout(loadSelfPresets, 450);
+    };
+
+    if (typeof window.showConfirm === 'function') {
+      window.showConfirm('Eliminar preset', `Eliminar "${name}"?`, run, {
+        icon: 'trash',
+        buttonType: 'danger',
+        buttonIcon: 'trash',
+        buttonText: 'Eliminar'
+      });
+      return;
+    }
+    if (confirm(`Eliminar "${name}"?`)) run();
+  }
+
+  function applySelfPreset(presetId) {
+    if (!hasPerm('canManagePresets')) return;
+    const id = toInt(presetId, 0);
+    if (id <= 0) return;
+    sendPanelAction({ action: 'loadSelfPreset', presetId: id });
+    notify('success', 'Aplicando preset...');
+  }
+
+  async function loadVehicleBuilds() {
+    if (!document.getElementById('vehicleBuildsList')) return;
+    if (!hasPerm('canManagePresets')) {
+      renderEmpty('vehicleBuildsList', 'Sin permiso para administrar builds.');
+      return;
+    }
+
+    setListHtml('vehicleBuildsList', '<div class="preset-empty">Cargando...</div>');
+    const resp = await nuiJson('getVehicleBuilds', {});
+    const rows = Array.isArray(resp) ? resp : [];
+
+    if (!rows.length) {
+      renderEmpty('vehicleBuildsList', 'No hay builds guardados.');
+      return;
+    }
+
+    const html = rows
+      .map((p) => {
+        const id = toInt(p.id, 0);
+        const name = sanitizeUiText(p.name || `build_${id}`) || `build_${id}`;
+        const nameEnc = encodeURIComponent(name);
+        const meta = safeNowLabel(p);
+        return `
+          <div class="preset-item">
+            <div class="preset-meta">
+              <div class="preset-name">${esc(name)}</div>
+              <div class="preset-sub">${esc(meta)}</div>
+            </div>
+            <div class="preset-actions">
+              <button class="btn btn-sm btn-primary" onclick="applyVehicleBuild(${id})">
+                <i class="fas fa-wand-magic-sparkles"></i> Aplicar
+              </button>
+              <button class="btn btn-sm btn-danger" onclick="deleteVehicleBuild(${id}, '${nameEnc}')">
+                <i class="fas fa-trash"></i>
+              </button>
+            </div>
+          </div>
+        `;
+      })
+      .join('');
+
+    setListHtml('vehicleBuildsList', html);
+  }
+
+  async function saveVehicleBuild() {
+    if (!hasPerm('canManagePresets')) {
+      notify('error', 'Sin permiso para administrar builds.');
+      return;
+    }
+
+    const name = getValue('vehicleBuildName').trim();
+    if (!name) {
+      notify('error', 'Ingresa un nombre de build.');
+      return;
+    }
+
+    const snap = await nuiJson('getCurrentVehicleBuild', {});
+    if (!snap || snap.ok !== true || typeof snap.build !== 'object') {
+      notify('error', snap && snap.error === 'no_vehicle' ? 'No estas en un vehiculo.' : 'No se pudo leer build actual.');
+      return;
+    }
+
+    sendPanelAction({ action: 'saveVehicleBuild', name, build: snap.build });
+    notify('success', 'Guardando build...');
+    setTimeout(loadVehicleBuilds, 450);
+  }
+
+  function deleteVehicleBuild(buildId, nameEnc) {
+    if (!hasPerm('canManagePresets')) return;
+    const id = toInt(buildId, 0);
+    if (id <= 0) return;
+    const name = nameEnc ? sanitizeUiText(decodeURIComponent(String(nameEnc))) : `#${id}`;
+
+    const run = () => {
+      sendPanelAction({ action: 'deleteVehicleBuild', buildId: id });
+      notify('warning', 'Eliminando build...');
+      setTimeout(loadVehicleBuilds, 450);
+    };
+
+    if (typeof window.showConfirm === 'function') {
+      window.showConfirm('Eliminar build', `Eliminar "${name}"?`, run, {
+        icon: 'trash',
+        buttonType: 'danger',
+        buttonIcon: 'trash',
+        buttonText: 'Eliminar'
+      });
+      return;
+    }
+    if (confirm(`Eliminar "${name}"?`)) run();
+  }
+
+  function applyVehicleBuild(buildId) {
+    const id = toInt(buildId, 0);
+    if (id <= 0) return;
+    sendPanelAction({ action: 'applyVehicleBuild', buildId: id });
+    notify('success', 'Aplicando build...');
+  }
+
+  async function loadVehicleFavorites() {
+    if (!document.getElementById('vehicleFavoritesList')) return;
+    if (!hasPerm('canManagePresets')) {
+      renderEmpty('vehicleFavoritesList', 'Sin permiso para administrar favoritos.');
+      return;
+    }
+
+    setListHtml('vehicleFavoritesList', '<div class="preset-empty">Cargando...</div>');
+    const resp = await nuiJson('getVehicleFavorites', {});
+    const rows = Array.isArray(resp) ? resp : [];
+
+    if (!rows.length) {
+      renderEmpty('vehicleFavoritesList', 'No hay favoritos guardados.');
+      return;
+    }
+
+    const html = rows
+      .map((f) => {
+        const id = toInt(f.id, 0);
+        const model = sanitizeUiText(f.model || '') || 'unknown';
+        const label = sanitizeUiText(f.label || '') || model;
+        const labelEnc = encodeURIComponent(label);
+        const meta = safeNowLabel(f);
+        return `
+          <div class="preset-item">
+            <div class="preset-meta">
+              <div class="preset-name">${esc(label)} <span class="preset-chip"><code>${esc(model)}</code></span></div>
+              <div class="preset-sub">${esc(meta)}</div>
+            </div>
+            <div class="preset-actions">
+              <button class="btn btn-sm btn-primary" onclick="spawnFavoriteVehicle('${esc(model)}')">
+                <i class="fas fa-car"></i> Spawn
+              </button>
+              <button class="btn btn-sm btn-danger" onclick="removeVehicleFavorite(${id}, '${labelEnc}')">
+                <i class="fas fa-trash"></i>
+              </button>
+            </div>
+          </div>
+        `;
+      })
+      .join('');
+
+    setListHtml('vehicleFavoritesList', html);
+  }
+
+  function addVehicleFavorite() {
+    if (!hasPerm('canManagePresets')) return;
+    const model = getValue('vehicleFavoriteModel').trim();
+    const label = getValue('vehicleFavoriteLabel').trim();
+    if (!model) {
+      notify('error', 'Ingresa el modelo.');
+      return;
+    }
+    sendPanelAction({ action: 'addVehicleFavorite', model, label: label || model });
+    notify('success', 'Agregando favorito...');
+    setTimeout(loadVehicleFavorites, 450);
+  }
+
+  function removeVehicleFavorite(favoriteId, labelEnc) {
+    if (!hasPerm('canManagePresets')) return;
+    const id = toInt(favoriteId, 0);
+    if (id <= 0) return;
+    const label = labelEnc ? sanitizeUiText(decodeURIComponent(String(labelEnc))) : `#${id}`;
+
+    const run = () => {
+      sendPanelAction({ action: 'removeVehicleFavorite', favoriteId: id });
+      notify('warning', 'Eliminando favorito...');
+      setTimeout(loadVehicleFavorites, 450);
+    };
+
+    if (typeof window.showConfirm === 'function') {
+      window.showConfirm('Eliminar favorito', `Eliminar "${label}"?`, run, {
+        icon: 'trash',
+        buttonType: 'danger',
+        buttonIcon: 'trash',
+        buttonText: 'Eliminar'
+      });
+      return;
+    }
+    if (confirm(`Eliminar "${label}"?`)) run();
+  }
+
+  function spawnFavoriteVehicle(model) {
+    const clean = sanitizeUiText(model || '').trim();
+    if (!clean) return;
+    if (typeof window.spawnCustomVehicle === 'function') {
+      window.spawnCustomVehicle(clean);
+    } else {
+      sendPanelAction({ action: 'spawnVehicle', model: clean });
+    }
+  }
+
+  async function loadVehicleSpawnHistory() {
+    if (!document.getElementById('vehicleSpawnHistoryList')) return;
+    if (!hasPerm('canManagePresets')) {
+      renderEmpty('vehicleSpawnHistoryList', 'Sin permiso para ver historial.');
+      return;
+    }
+
+    const limitEl = document.getElementById('vehicleSpawnHistoryLimit');
+    const limit = limitEl ? toInt(limitEl.value, 50) : 50;
+
+    setListHtml('vehicleSpawnHistoryList', '<div class="preset-empty">Cargando...</div>');
+    const resp = await nuiJson('getVehicleSpawnHistory', { limit });
+    const rows = Array.isArray(resp) ? resp : [];
+
+    if (!rows.length) {
+      renderEmpty('vehicleSpawnHistoryList', 'Sin historial por ahora.');
+      return;
+    }
+
+    const html = rows
+      .map((h) => {
+        const model = sanitizeUiText(h.model || '') || 'unknown';
+        const label = sanitizeUiText(h.label || '') || model;
+        const created = sanitizeUiText(h.created_at || '');
+        const target = sanitizeUiText(h.target_name || '');
+        const targetPart = target ? ` · Target: ${target}` : '';
+        const meta = `${created}${targetPart}`.trim() || safeNowLabel(h);
+        const favLabelEnc = encodeURIComponent(label);
+        return `
+          <div class="preset-item">
+            <div class="preset-meta">
+              <div class="preset-name">${esc(label)} <span class="preset-chip"><code>${esc(model)}</code></span></div>
+              <div class="preset-sub">${esc(meta)}</div>
+            </div>
+            <div class="preset-actions">
+              <button class="btn btn-sm btn-primary" onclick="spawnFavoriteVehicle('${esc(model)}')">
+                <i class="fas fa-rotate-left"></i> Repetir
+              </button>
+              <button class="btn btn-sm btn-secondary" onclick="addVehicleFavoriteFromHistory('${esc(model)}', '${favLabelEnc}')">
+                <i class="fas fa-star"></i> Fav
+              </button>
+            </div>
+          </div>
+        `;
+      })
+      .join('');
+
+    setListHtml('vehicleSpawnHistoryList', html);
+  }
+
+  function addVehicleFavoriteFromHistory(model, labelEnc) {
+    if (!hasPerm('canManagePresets')) return;
+    const m = sanitizeUiText(model || '').trim();
+    const label = labelEnc ? sanitizeUiText(decodeURIComponent(String(labelEnc))) : m;
+    if (!m) return;
+    sendPanelAction({ action: 'addVehicleFavorite', model: m, label: label || m });
+    notify('success', 'Agregando a favoritos...');
+    setTimeout(loadVehicleFavorites, 450);
+  }
+
   // Register functions globally for HTML onclick handlers.
   window.nuiJson = nuiJson;
   window.openOfflineBan = openOfflineBan;
@@ -1290,6 +1691,20 @@
   window.auditPrev = auditPrev;
   window.auditNext = auditNext;
   window.auditExport = auditExport;
+  window.loadSelfPresets = loadSelfPresets;
+  window.saveSelfPreset = saveSelfPreset;
+  window.deleteSelfPreset = deleteSelfPreset;
+  window.applySelfPreset = applySelfPreset;
+  window.loadVehicleBuilds = loadVehicleBuilds;
+  window.saveVehicleBuild = saveVehicleBuild;
+  window.deleteVehicleBuild = deleteVehicleBuild;
+  window.applyVehicleBuild = applyVehicleBuild;
+  window.loadVehicleFavorites = loadVehicleFavorites;
+  window.addVehicleFavorite = addVehicleFavorite;
+  window.removeVehicleFavorite = removeVehicleFavorite;
+  window.loadVehicleSpawnHistory = loadVehicleSpawnHistory;
+  window.spawnFavoriteVehicle = spawnFavoriteVehicle;
+  window.addVehicleFavoriteFromHistory = addVehicleFavoriteFromHistory;
   window.permissionsLoad = permissionsLoad;
   window.permissionsLoadRole = permissionsLoadRole;
   window.permissionsSetRole = permissionsSetRole;

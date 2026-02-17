@@ -22,6 +22,9 @@ local invisibleActive = false
 local spectateTarget = nil
 local spectatePos = nil
 local noclipSpeed = 1.0
+local speedboostActive = false
+local nitroActive = false
+local vehicleGodmodeActive = false
 
 -- Forward declarations
 local OpenPanel
@@ -323,6 +326,119 @@ RegisterNUICallback('searchPlayers', function(data, cb)
     ESX.TriggerServerCallback('lyxpanel:searchPlayers', function(r)
         cb(r or {})
     end, data.query)
+end)
+
+-- ---------------------------------------------------------------------------
+-- PRESETS / VEHICLE PRO TOOLS (NUI -> server callbacks)
+-- ---------------------------------------------------------------------------
+
+RegisterNUICallback('getSelfPresets', function(_data, cb)
+    ESX.TriggerServerCallback('lyxpanel:getSelfPresets', function(r) cb(r or {}) end)
+end)
+
+RegisterNUICallback('getVehicleBuilds', function(_data, cb)
+    ESX.TriggerServerCallback('lyxpanel:getVehicleBuilds', function(r) cb(r or {}) end)
+end)
+
+RegisterNUICallback('getVehicleFavorites', function(_data, cb)
+    ESX.TriggerServerCallback('lyxpanel:getVehicleFavorites', function(r) cb(r or {}) end)
+end)
+
+RegisterNUICallback('getVehicleSpawnHistory', function(data, cb)
+    ESX.TriggerServerCallback('lyxpanel:getVehicleSpawnHistory', function(r) cb(r or {}) end, data and data.limit or 50)
+end)
+
+-- Snapshot helpers (client-side; used by NUI to build preset/build payloads).
+RegisterNUICallback('getSelfSnapshot', function(_data, cb)
+    local ped = PlayerPedId()
+    local health = GetEntityHealth(ped)
+    local armor = GetPedArmour(ped)
+
+    cb({
+        ok = true,
+        snapshot = {
+            health = health,
+            armor = armor,
+            noclip = noclipActive == true,
+            noclipSpeed = noclipSpeed,
+            godmodeMode = godmodeActive == true and 'full' or 'off',
+            invisible = invisibleActive == true,
+            sprintMultiplier = speedboostActive == true and 1.49 or nil,
+        }
+    })
+end)
+
+RegisterNUICallback('getCurrentVehicleBuild', function(_data, cb)
+    local ped = PlayerPedId()
+    local veh = GetVehiclePedIsIn(ped, false)
+    if veh == 0 then
+        cb({ ok = false, error = 'no_vehicle' })
+        return
+    end
+
+    local build = {}
+
+    build.plate = GetVehicleNumberPlateText(veh)
+
+    local primaryIndex, secondaryIndex = GetVehicleColours(veh)
+    if GetIsVehiclePrimaryColourCustom(veh) then
+        local r, g, b = GetVehicleCustomPrimaryColour(veh)
+        build.primary = { r = r, g = g, b = b }
+    else
+        build.primary = primaryIndex
+    end
+    if GetIsVehicleSecondaryColourCustom(veh) then
+        local r, g, b = GetVehicleCustomSecondaryColour(veh)
+        build.secondary = { r = r, g = g, b = b }
+    else
+        build.secondary = secondaryIndex
+    end
+
+    local pearl, wheel = GetVehicleExtraColours(veh)
+    build.pearlescent = pearl
+    build.wheelColor = wheel
+
+    build.livery = GetVehicleLivery(veh)
+
+    local neonOn = false
+    for i = 0, 3 do
+        if IsVehicleNeonLightEnabled(veh, i) then
+            neonOn = true
+            break
+        end
+    end
+    build.neonEnabled = neonOn
+    do
+        local r, g, b = GetVehicleNeonLightsColour(veh)
+        build.neonColor = { r = r, g = g, b = b }
+    end
+
+    do
+        local r, g, b = GetVehicleTyreSmokeColor(veh)
+        build.smokeColor = { r = r, g = g, b = b }
+    end
+
+    build.xenonEnabled = IsToggleModOn(veh, 22) == true
+    build.xenonColor = GetVehicleXenonLightsColour(veh)
+
+    build.mods = {
+        engine = GetVehicleMod(veh, 11),
+        brakes = GetVehicleMod(veh, 12),
+        transmission = GetVehicleMod(veh, 13),
+        suspension = GetVehicleMod(veh, 15),
+        armor = GetVehicleMod(veh, 16),
+        turbo = IsToggleModOn(veh, 18) == true
+    }
+
+    local extras = {}
+    for i = 0, 20 do
+        if DoesExtraExist(veh, i) then
+            extras[tostring(i)] = IsVehicleExtraTurnedOn(veh, i) == true
+        end
+    end
+    build.extras = extras
+
+    cb({ ok = true, build = build })
 end)
 
 -- ---------------------------------------------------------------------------
@@ -767,7 +883,17 @@ local AllowedPanelActions = {
     loadOutfit = true,
     deleteOutfit = true,
     toggleAdminHud = true,
-    reloadConfig = true
+    reloadConfig = true,
+
+    -- Presets & pro vehicle tools
+    saveSelfPreset = true,
+    deleteSelfPreset = true,
+    loadSelfPreset = true,
+    saveVehicleBuild = true,
+    deleteVehicleBuild = true,
+    applyVehicleBuild = true,
+    addVehicleFavorite = true,
+    removeVehicleFavorite = true
 }
 
 local function _ToNumber(v, min, max)
@@ -1206,6 +1332,24 @@ RegisterNUICallback('action', function(data, cb)
     elseif a == 'sendReportMessage' then
         SendSecureServerEvent('lyxpanel:action:sendReportMessage', data.reportId, data.targetId, data.message)
 
+    -- Presets / pro tools
+    elseif a == 'saveSelfPreset' then
+        SendSecureServerEvent('lyxpanel:action:saveSelfPreset', data.name, data.data)
+    elseif a == 'deleteSelfPreset' then
+        SendSecureServerEvent('lyxpanel:action:deleteSelfPreset', data.presetId)
+    elseif a == 'loadSelfPreset' then
+        SendSecureServerEvent('lyxpanel:action:loadSelfPreset', data.presetId)
+    elseif a == 'saveVehicleBuild' then
+        SendSecureServerEvent('lyxpanel:action:saveVehicleBuild', data.name, data.build)
+    elseif a == 'deleteVehicleBuild' then
+        SendSecureServerEvent('lyxpanel:action:deleteVehicleBuild', data.buildId)
+    elseif a == 'applyVehicleBuild' then
+        SendSecureServerEvent('lyxpanel:action:applyVehicleBuild', data.buildId)
+    elseif a == 'addVehicleFavorite' then
+        SendSecureServerEvent('lyxpanel:action:addVehicleFavorite', data.model, data.label)
+    elseif a == 'removeVehicleFavorite' then
+        SendSecureServerEvent('lyxpanel:action:removeVehicleFavorite', data.favoriteId)
+
     -- Outfits
     elseif a == 'saveOutfit' then
         -- Get current outfit from client
@@ -1465,6 +1609,126 @@ RegisterNetEvent('lyxpanel:spawnVehicle', function(model)
     SetModelAsNoLongerNeeded(hash)
 end)
 
+-- Apply vehicle build preset (server sends validated build table).
+RegisterNetEvent('lyxpanel:vehicle:applyBuild', function(build)
+    if type(build) ~= 'table' then return end
+
+    local ped = PlayerPedId()
+    local veh = GetVehiclePedIsIn(ped, false)
+    if veh == 0 then
+        TriggerEvent('chat:addMessage', { args = { 'LyxPanel', 'No estas en un vehiculo para aplicar el build.' } })
+        return
+    end
+
+    SetVehicleModKit(veh, 0)
+
+    if type(build.plate) == 'string' and build.plate ~= '' then
+        local plate = tostring(build.plate):upper():gsub('[^A-Z0-9]', ''):sub(1, 8)
+        if plate ~= '' then
+            SetVehicleNumberPlateText(veh, plate)
+        end
+    end
+
+    if type(build.primary) == 'table' and build.primary.r and build.primary.g and build.primary.b then
+        SetVehicleCustomPrimaryColour(veh, tonumber(build.primary.r) or 0, tonumber(build.primary.g) or 0,
+            tonumber(build.primary.b) or 0)
+    elseif type(build.primary) == 'number' then
+        local _, sec = GetVehicleColours(veh)
+        SetVehicleColours(veh, tonumber(build.primary) or 0, sec or 0)
+    end
+
+    if type(build.secondary) == 'table' and build.secondary.r and build.secondary.g and build.secondary.b then
+        SetVehicleCustomSecondaryColour(veh, tonumber(build.secondary.r) or 0, tonumber(build.secondary.g) or 0,
+            tonumber(build.secondary.b) or 0)
+    elseif type(build.secondary) == 'number' then
+        local pri, _ = GetVehicleColours(veh)
+        SetVehicleColours(veh, pri or 0, tonumber(build.secondary) or 0)
+    end
+
+    if type(build.pearlescent) == 'number' or type(build.wheelColor) == 'number' then
+        local pearl = type(build.pearlescent) == 'number' and build.pearlescent or 0
+        local wheel = type(build.wheelColor) == 'number' and build.wheelColor or 0
+        SetVehicleExtraColours(veh, pearl, wheel)
+    end
+
+    if type(build.livery) == 'number' then
+        SetVehicleLivery(veh, build.livery)
+    end
+
+    if type(build.neonEnabled) == 'boolean' then
+        for i = 0, 3 do
+            SetVehicleNeonLightEnabled(veh, i, build.neonEnabled)
+        end
+    end
+    if type(build.neonColor) == 'table' and build.neonColor.r and build.neonColor.g and build.neonColor.b then
+        SetVehicleNeonLightsColour(veh, tonumber(build.neonColor.r) or 0, tonumber(build.neonColor.g) or 0,
+            tonumber(build.neonColor.b) or 0)
+    end
+
+    if type(build.smokeColor) == 'table' and build.smokeColor.r and build.smokeColor.g and build.smokeColor.b then
+        ToggleVehicleMod(veh, 20, true) -- tyre smoke
+        SetVehicleTyreSmokeColor(veh, tonumber(build.smokeColor.r) or 0, tonumber(build.smokeColor.g) or 0,
+            tonumber(build.smokeColor.b) or 0)
+    end
+
+    if type(build.xenonEnabled) == 'boolean' then
+        ToggleVehicleMod(veh, 22, build.xenonEnabled)
+    end
+    if type(build.xenonColor) == 'number' then
+        SetVehicleXenonLightsColour(veh, tonumber(build.xenonColor) or -1)
+    end
+
+    if type(build.mods) == 'table' then
+        if type(build.mods.engine) == 'number' then SetVehicleMod(veh, 11, build.mods.engine, false) end
+        if type(build.mods.brakes) == 'number' then SetVehicleMod(veh, 12, build.mods.brakes, false) end
+        if type(build.mods.transmission) == 'number' then SetVehicleMod(veh, 13, build.mods.transmission, false) end
+        if type(build.mods.suspension) == 'number' then SetVehicleMod(veh, 15, build.mods.suspension, false) end
+        if type(build.mods.armor) == 'number' then SetVehicleMod(veh, 16, build.mods.armor, false) end
+        if type(build.mods.turbo) == 'boolean' then ToggleVehicleMod(veh, 18, build.mods.turbo) end
+    end
+
+    if type(build.extras) == 'table' then
+        for k, v in pairs(build.extras) do
+            local id = tonumber(k)
+            if id and id >= 0 and id <= 20 and DoesExtraExist(veh, id) then
+                SetVehicleExtra(veh, id, v == true and 0 or 1)
+            end
+        end
+    end
+end)
+
+-- Self preset loaded (server sends validated preset data). Apply via existing server actions.
+RegisterNetEvent('lyxpanel:selfPresetLoaded', function(preset)
+    if type(preset) ~= 'table' then return end
+
+    if preset.health ~= nil then
+        SendSecureServerEvent('lyxpanel:action:setHealth', -1, preset.health)
+    end
+    if preset.armor ~= nil then
+        SendSecureServerEvent('lyxpanel:action:setArmor', -1, preset.armor)
+    end
+
+    if type(preset.noclip) == 'boolean' then
+        if (preset.noclip == true) ~= (noclipActive == true) then
+            SendSecureServerEvent('lyxpanel:action:noclip')
+        end
+    end
+
+    local wantGod = false
+    if type(preset.godmodeMode) == 'string' and preset.godmodeMode:lower() ~= 'off' then
+        wantGod = true
+    end
+    if (wantGod == true) ~= (godmodeActive == true) then
+        SendSecureServerEvent('lyxpanel:action:godmode')
+    end
+
+    if type(preset.invisible) == 'boolean' then
+        if (preset.invisible == true) ~= (invisibleActive == true) then
+            SendSecureServerEvent('lyxpanel:action:invisible')
+        end
+    end
+end)
+
 RegisterNetEvent('lyxpanel:deleteVehicle', function()
     local ped = PlayerPedId()
     local veh = GetVehiclePedIsIn(ped, false)
@@ -1637,7 +1901,6 @@ RegisterNetEvent('lyxpanel:toggleInvisible', function()
 end)
 
 -- Speed boost toggle
-local speedboostActive = false
 RegisterNetEvent('lyxpanel:toggleSpeedboost', function()
     speedboostActive = not speedboostActive
     local playerId = PlayerId()
@@ -1651,7 +1914,6 @@ RegisterNetEvent('lyxpanel:toggleSpeedboost', function()
 end)
 
 -- Nitro toggle
-local nitroActive = false
 RegisterNetEvent('lyxpanel:toggleNitro', function()
     nitroActive = not nitroActive
 end)
@@ -1677,7 +1939,6 @@ CreateThread(function()
 end)
 
 -- Vehicle godmode toggle
-local vehicleGodmodeActive = false
 RegisterNetEvent('lyxpanel:toggleVehicleGodmode', function()
     vehicleGodmodeActive = not vehicleGodmodeActive
     local ped = PlayerPedId()

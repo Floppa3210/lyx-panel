@@ -37,3 +37,101 @@
 .emoji-svg svg { width: 100%; height: 100%; display: block; }
 .toast-svg-icon { width: 1.1rem; height: 1.1rem; }
 
+/* -------------------------------------------------------------------------- */
+/* v4.7 - Presets / Vehicle Pro Tools UI                                      */
+/* -------------------------------------------------------------------------- */
+.tool-card-wide {
+  grid-column: 1 / -1;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.row .btn {
+  white-space: nowrap;
+}
+
+.muted {
+  color: var(--text-secondary);
+  font-size: 12px;
+  margin-bottom: 10px;
+}
+
+.preset-list {
+  margin-top: 10px;
+  display: grid;
+  gap: 8px;
+}
+
+.preset-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-glass);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.preset-item:hover {
+  border-color: rgba(61, 165, 255, 0.45);
+  background: rgba(61, 165, 255, 0.08);
+}
+
+.preset-meta {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.preset-name {
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.preset-sub {
+  font-size: 11px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.preset-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.preset-empty {
+  border: 1px dashed var(--border-glass);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  text-align: center;
+}
+
+.preset-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(41, 208, 197, 0.12);
+  border: 1px solid rgba(41, 208, 197, 0.28);
+  margin-left: 6px;
+}
+
+.preset-chip code {
+  font-size: 11px;
+  color: var(--accent-cyan);
+}
+

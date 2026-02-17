@@ -294,6 +294,57 @@ local function _CreateAccessTables()
     }
 end
 
+local function _CreatePresetTables()
+    return {
+        [[CREATE TABLE IF NOT EXISTS lyxpanel_self_presets (
+            id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            admin_identifier VARCHAR(255) NOT NULL,
+            name VARCHAR(100) NOT NULL,
+            data JSON NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY uniq_admin_name (admin_identifier, name),
+            INDEX idx_admin (admin_identifier),
+            INDEX idx_updated_at (updated_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4]],
+
+        [[CREATE TABLE IF NOT EXISTS lyxpanel_vehicle_builds (
+            id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            admin_identifier VARCHAR(255) NOT NULL,
+            name VARCHAR(100) NOT NULL,
+            build JSON NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY uniq_admin_name (admin_identifier, name),
+            INDEX idx_admin (admin_identifier),
+            INDEX idx_updated_at (updated_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4]],
+
+        [[CREATE TABLE IF NOT EXISTS lyxpanel_vehicle_favorites (
+            id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            admin_identifier VARCHAR(255) NOT NULL,
+            model VARCHAR(64) NOT NULL,
+            label VARCHAR(100) DEFAULT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE KEY uniq_admin_model (admin_identifier, model),
+            INDEX idx_admin (admin_identifier),
+            INDEX idx_created_at (created_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4]],
+
+        [[CREATE TABLE IF NOT EXISTS lyxpanel_vehicle_spawn_history (
+            id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            admin_identifier VARCHAR(255) NOT NULL,
+            model VARCHAR(64) NOT NULL,
+            label VARCHAR(100) DEFAULT NULL,
+            target_identifier VARCHAR(255) DEFAULT NULL,
+            target_name VARCHAR(100) DEFAULT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_admin (admin_identifier),
+            INDEX idx_created_at (created_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4]]
+    }
+end
+
 local MIGRATIONS = {
     {
         version = 1,
@@ -326,6 +377,11 @@ local MIGRATIONS = {
         version = 4,
         name = 'access_list_tables',
         up = _CreateAccessTables()
+    },
+    {
+        version = 5,
+        name = 'presets_and_vehicle_tables',
+        up = _CreatePresetTables()
     }
 }
 

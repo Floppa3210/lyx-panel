@@ -14,11 +14,13 @@ local FirewallState = {
 
 local DefaultAllowlist = {
     ['lyxpanel:action:addNote'] = true,
+    ['lyxpanel:action:addVehicleFavorite'] = true,
     ['lyxpanel:action:addWhitelist'] = true,
     ['lyxpanel:action:adminChat'] = true,
     ['lyxpanel:action:adminJail'] = true,
     ['lyxpanel:action:announce'] = true,
     ['lyxpanel:action:announcement'] = true,
+    ['lyxpanel:action:applyVehicleBuild'] = true,
     ['lyxpanel:action:assignReport'] = true,
     ['lyxpanel:action:ban'] = true,
     ['lyxpanel:action:banIPRange'] = true,
@@ -36,6 +38,8 @@ local DefaultAllowlist = {
     ['lyxpanel:action:clearWarnings'] = true,
     ['lyxpanel:action:closeReport'] = true,
     ['lyxpanel:action:copyPosition'] = true,
+    ['lyxpanel:action:deleteSelfPreset'] = true,
+    ['lyxpanel:action:deleteVehicleBuild'] = true,
     ['lyxpanel:action:deleteGarageVehicle'] = true,
     ['lyxpanel:action:deleteNearbyVehicles'] = true,
     ['lyxpanel:action:deleteOutfit'] = true,
@@ -61,6 +65,7 @@ local DefaultAllowlist = {
     ['lyxpanel:action:jail'] = true,
     ['lyxpanel:action:kick'] = true,
     ['lyxpanel:action:kill'] = true,
+    ['lyxpanel:action:loadSelfPreset'] = true,
     ['lyxpanel:action:loadOutfit'] = true,
     ['lyxpanel:action:muteChat'] = true,
     ['lyxpanel:action:muteVoice'] = true,
@@ -75,12 +80,15 @@ local DefaultAllowlist = {
     ['lyxpanel:action:removeLicense'] = true,
     ['lyxpanel:action:removeMoney'] = true,
     ['lyxpanel:action:removeWeapon'] = true,
+    ['lyxpanel:action:removeVehicleFavorite'] = true,
     ['lyxpanel:action:removeWhitelist'] = true,
     ['lyxpanel:action:repairVehicle'] = true,
     ['lyxpanel:action:revive'] = true,
     ['lyxpanel:action:reviveAll'] = true,
     ['lyxpanel:action:saveOutfit'] = true,
+    ['lyxpanel:action:saveSelfPreset'] = true,
     ['lyxpanel:action:saveTeleportFavorite'] = true,
+    ['lyxpanel:action:saveVehicleBuild'] = true,
     ['lyxpanel:action:scheduleAnnounce'] = true,
     ['lyxpanel:action:screenshot'] = true,
     ['lyxpanel:action:sendReportMessage'] = true,
@@ -1099,6 +1107,55 @@ local DefaultSchemas = {
             [1] = { integer = true, min = 1, max = 4096 },
             [2] = { integer = true, min = 1, max = 20 }
         }
+    },
+    -- Presets / Pro tools (self presets + vehicle builds/favorites/history)
+    ['lyxpanel:action:saveSelfPreset'] = {
+        minArgs = 2,
+        maxArgs = 2,
+        types = { [1] = 'string', [2] = 'table' },
+        stringRules = { [1] = { minLen = 1, maxLen = 64 } }
+    },
+    ['lyxpanel:action:deleteSelfPreset'] = {
+        minArgs = 1,
+        maxArgs = 1,
+        types = { [1] = 'number' },
+        numberRanges = { [1] = { integer = true, min = 1, max = 2147483647 } }
+    },
+    ['lyxpanel:action:loadSelfPreset'] = {
+        minArgs = 1,
+        maxArgs = 1,
+        types = { [1] = 'number' },
+        numberRanges = { [1] = { integer = true, min = 1, max = 2147483647 } }
+    },
+    ['lyxpanel:action:saveVehicleBuild'] = {
+        minArgs = 2,
+        maxArgs = 2,
+        types = { [1] = 'string', [2] = 'table' },
+        stringRules = { [1] = { minLen = 1, maxLen = 64 } }
+    },
+    ['lyxpanel:action:deleteVehicleBuild'] = {
+        minArgs = 1,
+        maxArgs = 1,
+        types = { [1] = 'number' },
+        numberRanges = { [1] = { integer = true, min = 1, max = 2147483647 } }
+    },
+    ['lyxpanel:action:applyVehicleBuild'] = {
+        minArgs = 1,
+        maxArgs = 1,
+        types = { [1] = 'number' },
+        numberRanges = { [1] = { integer = true, min = 1, max = 2147483647 } }
+    },
+    ['lyxpanel:action:addVehicleFavorite'] = {
+        minArgs = 1,
+        maxArgs = 2,
+        types = { [1] = 'string', [2] = { 'string', 'nil' } },
+        stringRules = { [1] = { minLen = 1, maxLen = 32 }, [2] = { minLen = 0, maxLen = 100 } }
+    },
+    ['lyxpanel:action:removeVehicleFavorite'] = {
+        minArgs = 1,
+        maxArgs = 1,
+        types = { [1] = 'number' },
+        numberRanges = { [1] = { integer = true, min = 1, max = 2147483647 } }
     },
     ['lyxpanel:action:addWhitelist'] = {
         minArgs = 1,
