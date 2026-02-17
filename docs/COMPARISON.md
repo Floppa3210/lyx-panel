@@ -5,6 +5,26 @@ Este documento compara el enfoque de LyxPanel con:
 - paneles/anticheats de pago tipo "suite" (web + licencias + ecommerce)
 - enfoque de anticheats conocidos (referencia: FiveGuard y similares)
 
+## 0) Matriz comparativa (10 admin panels vs LyxPanel)
+
+Notas:
+- Esta tabla mezcla (a) info publica y (b) observaciones de ejemplos locales.
+- "RIESGO" significa: en ejemplos locales/descargas se detectaron patrones peligrosos (loader/exec remoto, ofuscacion, URLs raras). No es un veredicto del upstream oficial.
+
+| Panel | Tipo | Permisos granulares (UI) | Auditoria/export | Hardening eventos (schema/rate/token) | RIESGO (ejemplo local) | Nota rapida |
+|---|---|---|---|---|---|---|
+| **LyxPanel (este repo)** | OSS | SI | SI (export) | SI (token+nonce+schema+rate) | NO | In-game NUI, pensado para correr con LyxGuard |
+| txAdmin | Oficial | PARCIAL | PARCIAL | ? | NO | Herramienta oficial (no es panel NUI ESX) |
+| EasyAdmin | OSS | PARCIAL | PARCIAL | ? | SI | En ejemplos locales se vio loader/exec remoto |
+| vMenu | OSS | NO | PARCIAL | ? | ? | Menu popular (no enfocado a auditoria fuerte) |
+| MenuV | OSS | n/a | n/a | n/a | ? | Framework UI, no panel completo |
+| esx_adminmode | OSS | NO | PARCIAL | ? | SI | En ejemplos locales se vio loader/exec remoto |
+| zAdmin-esx | OSS | PARCIAL | PARCIAL | ? | SI | En ejemplos locales se vio loader/exec remoto |
+| nova_adminmenu | OSS | PARCIAL | PARCIAL | ? | ? | Admin menu general |
+| flight_admin | OSS | PARCIAL | PARCIAL | ? | ? | Admin menu general |
+| dolu_tool | OSS | PARCIAL | PARCIAL | ? | ? | Herramienta general (version checks) |
+| rw-adminmenu | OSS | PARCIAL | PARCIAL | ? | SI | En ejemplos locales se vio fetch remoto (version/json) |
+
 ## 1) Alcance real de LyxPanel (que SI y que NO)
 LyxPanel es un panel **in-game (NUI)**.
 
@@ -102,6 +122,6 @@ Para que un panel sea "pro" en un entorno hostil:
 LyxPanel asume ese contrato y delega el enforcement extra a LyxGuard cuando esta presente.
 
 ## 7) Referencias (lectura opcional)
-- FiveGuard (safe events): https://docs.fiveguard.net/guides/safe-events
+- FiveGuard (safe events): https://docs.fiveguard.net/safe-events/manual-safe-events
 - Tokenizacion open source (idea similar): https://github.com/BrunoTheDev/salty_tokenizer
 
