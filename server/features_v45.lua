@@ -401,6 +401,9 @@ RegisterNetEvent('lyxpanel:action:teleportToFavorite', function(location)
         return
     end
     
+    if LyxPanel and LyxPanel.PushTeleportBackPosition then
+        LyxPanel.PushTeleportBackPosition(s, 'teleportToFavorite')
+    end
     _GuardSafeMovement(s)
     TriggerClientEvent('lyxpanel:teleport', s, x, y, z)
     local locName = _SanitizeText(location.name or 'Ubicacion', 64)

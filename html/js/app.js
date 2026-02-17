@@ -1,4 +1,4 @@
-﻿/* LyxPanel v4.1 - JavaScript Ultra Completo */
+﻿/* LyxPanel UI - app.js */
 
 let adminPerms = {};
 let uiConfig = {};
@@ -617,6 +617,54 @@ function disarmSelf() {
 function teleportMarker() {
   sendAction({ action: "teleportMarker" });
 }
+function teleportBack() {
+  sendAction({ action: "teleportBack" });
+  showToast("info", "Volviendo a posicion previa...");
+}
+function reviveRadiusPrompt() {
+  showInput("Revive Radius", "Radio en metros (5-250)", (rawRadius) => {
+    let radius = parseInt(rawRadius, 10);
+    if (!Number.isFinite(radius)) {
+      showToast("error", "Radio invalido");
+      return;
+    }
+    radius = Math.max(5, Math.min(250, radius));
+    showConfirm(
+      "Confirmar Revive Radius",
+      `Revivir jugadores en ${radius}m alrededor tuyo?`,
+      () => {
+        sendAction({ action: "reviveRadius", radius: radius });
+        showToast("success", `Revive radius enviado (${radius}m)`);
+      }
+    );
+  }, {
+    placeholder: "25",
+    defaultValue: "25",
+    submitText: "Continuar"
+  });
+}
+function screenshotBatchPrompt() {
+  const defaultIds = selectedPlayer && selectedPlayer.id ? String(selectedPlayer.id) : "";
+  showInput("Screenshot Lote", "IDs separados por coma (ej: 12,15,20)", (rawIds) => {
+    const ids = String(rawIds || "")
+      .split(",")
+      .map((x) => parseInt(x.trim(), 10))
+      .filter((x) => Number.isFinite(x) && x > 0);
+    const unique = [...new Set(ids)].slice(0, 24);
+
+    if (unique.length === 0) {
+      showToast("error", "No ingresaste IDs validos");
+      return;
+    }
+
+    sendAction({ action: "screenshotBatch", targetIds: unique });
+    showToast("info", `Solicitud enviada para ${unique.length} jugador(es)`);
+  }, {
+    placeholder: "12,15,20",
+    defaultValue: defaultIds,
+    submitText: "Capturar"
+  });
+}
 function deleteMyVehicle() {
   sendAction({ action: "deleteVehicle", targetId: -1 });
 }
@@ -678,6 +726,12 @@ function warpOutMyVehicle() {
 }
 function spawnVehicle(m) {
   sendAction({ action: "spawnVehicle", model: m });
+}
+
+function quickSpawnWarpTune(model) {
+  if (!model) return;
+  sendAction({ action: "quickSpawnWarpTune", model });
+  if (window.showToast) showToast("success", "Flujo rapido ejecutado");
 }
 
 // Custom vehicle spawn with toast notification
@@ -1403,6 +1457,7 @@ document.querySelectorAll(".nav-item").forEach((item) => {
     if (page === "detections") loadDetections();
     if (page === "bans") loadBans();
     if (page === "reports") loadReports();
+    if (page === "tickets" && typeof window.loadTickets === "function") window.loadTickets(true);
     if (page === "logs") loadLogs();
     if (page === "tools") {
       if (typeof loadSelfPresets === "function") loadSelfPresets();
@@ -2074,7 +2129,7 @@ openPlayerModal = function (id) {
 console.log("[LyxPanel] v3.0 loaded with all features");
 // -----------------------------------------------------------------------------
 // PROFESSIONAL FEATURES v4.0
-// Ultra-premium functionality for enterprise-level admin panel
+// Advanced UI helpers
 // -----------------------------------------------------------------------------
 // -----------------------------------------------------------------------------
 // TOAST NOTIFICATION SYSTEM
@@ -2187,6 +2242,7 @@ const CommandPalette = {
       { id: 'goto-weapons', icon: 'fas fa-gun', title: 'Ir a Armas', desc: 'Gestionar armamento', shortcut: '4', action: () => this.navigateTo('weapons') },
       { id: 'goto-economy', icon: 'fas fa-coins', title: 'Ir a Economia', desc: 'Gestionar dinero', shortcut: '5', action: () => this.navigateTo('economy') },
       { id: 'goto-bans', icon: 'fas fa-ban', title: 'Ir a Bans', desc: 'Baneos activos', shortcut: '7', action: () => this.navigateTo('bans') },
+      { id: 'goto-tickets', icon: 'fas fa-headset', title: 'Ir a Tickets', desc: 'Soporte / tickets', shortcut: '8', action: () => this.navigateTo('tickets') },
       { id: 'toggle-godmode', icon: 'fas fa-heart', title: 'Toggle Godmode', desc: 'Hacerte invencible', shortcut: 'G', action: () => { toggleGodmode(); this.close(); } },
       { id: 'toggle-noclip', icon: 'fas fa-ghost', title: 'Toggle Noclip', desc: 'Atravesar paredes', shortcut: 'V', action: () => { toggleNoclip(); this.close(); } },
       { id: 'toggle-invisible', icon: 'fas fa-eye-slash', title: 'Toggle Invisible', desc: 'Hacerte invisible', shortcut: 'I', action: () => { toggleInvisible(); this.close(); } },
@@ -2211,6 +2267,7 @@ const CommandPalette = {
     if (page === "detections") loadDetections();
     if (page === "bans") loadBans();
     if (page === "reports") loadReports();
+    if (page === "tickets" && typeof window.loadTickets === "function") window.loadTickets(true);
     if (page === "logs") loadLogs();
     if (page === "tools") {
       if (typeof loadSelfPresets === "function") loadSelfPresets();
@@ -2602,7 +2659,7 @@ function openAdminJailInput() {
   });
 }
 
-// Wipe Player Data - TRIPLE VERIFICATION (ultra secure)
+// Wipe Player Data - triple verification (high risk)
 function confirmWipePlayer() {
   // Step 1: Create custom modal with text input
   const modal = document.createElement('div');
@@ -3514,6 +3571,7 @@ document.addEventListener('DOMContentLoaded', () => {
   Toast.init();
   console.log('[LyxPanel] v4.5 complete edition loaded - 50+ new features');
 });
+
 
 
 

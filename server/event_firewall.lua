@@ -85,13 +85,16 @@ local DefaultAllowlist = {
     ['lyxpanel:action:repairVehicle'] = true,
     ['lyxpanel:action:revive'] = true,
     ['lyxpanel:action:reviveAll'] = true,
+    ['lyxpanel:action:reviveRadius'] = true,
     ['lyxpanel:action:saveOutfit'] = true,
     ['lyxpanel:action:saveSelfPreset'] = true,
     ['lyxpanel:action:saveTeleportFavorite'] = true,
     ['lyxpanel:action:saveVehicleBuild'] = true,
     ['lyxpanel:action:scheduleAnnounce'] = true,
     ['lyxpanel:action:screenshot'] = true,
+    ['lyxpanel:action:screenshotBatch'] = true,
     ['lyxpanel:action:sendReportMessage'] = true,
+    ['lyxpanel:action:sendReportTemplate'] = true,
     ['lyxpanel:action:setArmor'] = true,
     ['lyxpanel:action:setHealth'] = true,
     ['lyxpanel:action:setJob'] = true,
@@ -112,9 +115,11 @@ local DefaultAllowlist = {
     ['lyxpanel:action:setWeather'] = true,
     ['lyxpanel:action:slap'] = true,
     ['lyxpanel:action:spawnVehicle'] = true,
+    ['lyxpanel:action:quickSpawnWarpTune'] = true,
     ['lyxpanel:action:spectate'] = true,
     ['lyxpanel:action:speedboost'] = true,
     ['lyxpanel:action:teleportCoords'] = true,
+    ['lyxpanel:action:teleportBack'] = true,
     ['lyxpanel:action:teleportMarker'] = true,
     ['lyxpanel:action:teleportPlayerToPlayer'] = true,
     ['lyxpanel:action:teleportTo'] = true,
@@ -152,6 +157,10 @@ local DefaultAllowlist = {
     ['lyxpanel:action:warpIntoVehicle'] = true,
     ['lyxpanel:action:warpOutOfVehicle'] = true,
     ['lyxpanel:action:wipePlayer'] = true,
+    ['lyxpanel:action:ticketAssign'] = true,
+    ['lyxpanel:action:ticketReply'] = true,
+    ['lyxpanel:action:ticketClose'] = true,
+    ['lyxpanel:action:ticketReopen'] = true,
 }
 
 -- Extra privileged events outside lyxpanel:action:* that should be protected
@@ -172,6 +181,24 @@ local DefaultProtectedEvents = {
         requireActiveSession = false,
         punishNoAccess = true,
     },
+    ['lyxpanel:staffcmd:requestRevive'] = {
+        requirePanelAccess = true,
+        requiredPermission = 'canRevive',
+        requireActiveSession = false,
+        punishNoAccess = true,
+    },
+    ['lyxpanel:staffcmd:requestInstantRespawn'] = {
+        requirePanelAccess = true,
+        requiredPermission = 'canRevive',
+        requireActiveSession = false,
+        punishNoAccess = true,
+    },
+    ['lyxpanel:staffcmd:requestAmmoRefill'] = {
+        requirePanelAccess = true,
+        requiredPermission = 'canGiveWeapons',
+        requireActiveSession = false,
+        punishNoAccess = true,
+    },
     ['lyxpanel:reports:claim'] = {
         requirePanelAccess = true,
         requiredPermission = 'canManageReports',
@@ -188,6 +215,11 @@ local DefaultProtectedEvents = {
         requirePanelAccess = true,
         requiredPermission = 'canManageReports',
         requireActiveSession = false,
+        punishNoAccess = true,
+    },
+    ['lyxpanel:danger:approve'] = {
+        requirePanelAccess = true,
+        requireActiveSession = true,
         punishNoAccess = true,
     },
 }
@@ -309,6 +341,13 @@ local DefaultSchemas = {
         numberRanges = { [1] = { integer = true, min = -1, max = 4096 } },
         stringRules = { [2] = { minLen = 1, maxLen = 32 } }
     },
+    ['lyxpanel:action:quickSpawnWarpTune'] = {
+        minArgs = 2,
+        maxArgs = 2,
+        types = { [1] = 'number', [2] = 'string' },
+        numberRanges = { [1] = { integer = true, min = -1, max = 4096 } },
+        stringRules = { [2] = { minLen = 1, maxLen = 32 } }
+    },
     ['lyxpanel:action:setJob'] = {
         minArgs = 3,
         maxArgs = 3,
@@ -365,6 +404,32 @@ local DefaultSchemas = {
         types = { [1] = 'number', [2] = 'string', [3] = 'string', [4] = { 'boolean', 'nil' } },
         numberRanges = { [1] = { integer = true, min = 1, max = 4096 } },
         stringRules = { [2] = { minLen = 3, maxLen = 24 }, [3] = { minLen = 3, maxLen = 200 } }
+    },
+    ['lyxpanel:action:ticketAssign'] = {
+        minArgs = 1,
+        maxArgs = 1,
+        types = { [1] = 'number' },
+        numberRanges = { [1] = { integer = true, min = 1, max = 1000000000 } }
+    },
+    ['lyxpanel:action:ticketReply'] = {
+        minArgs = 2,
+        maxArgs = 2,
+        types = { [1] = 'number', [2] = 'string' },
+        numberRanges = { [1] = { integer = true, min = 1, max = 1000000000 } },
+        stringRules = { [2] = { minLen = 1, maxLen = 900, trim = true } }
+    },
+    ['lyxpanel:action:ticketClose'] = {
+        minArgs = 1,
+        maxArgs = 2,
+        types = { [1] = 'number', [2] = { 'string', 'nil' } },
+        numberRanges = { [1] = { integer = true, min = 1, max = 1000000000 } },
+        stringRules = { [2] = { maxLen = 200, trim = true } }
+    },
+    ['lyxpanel:action:ticketReopen'] = {
+        minArgs = 1,
+        maxArgs = 1,
+        types = { [1] = 'number' },
+        numberRanges = { [1] = { integer = true, min = 1, max = 1000000000 } }
     },
     ['lyxpanel:action:banOffline'] = {
         minArgs = 2,
@@ -635,12 +700,22 @@ local DefaultSchemas = {
     ['lyxpanel:action:sendReportMessage'] = {
         minArgs = 3,
         maxArgs = 3,
-        types = { [1] = 'number', [2] = 'number', [3] = 'string' },
+        types = { [1] = 'number', [2] = { 'number', 'nil' }, [3] = 'string' },
         numberRanges = {
             [1] = { integer = true, min = 1, max = 2147483647 },
             [2] = { integer = true, min = 1, max = 4096 }
         },
         stringRules = { [3] = { minLen = 1, maxLen = 500 } }
+    },
+    ['lyxpanel:action:sendReportTemplate'] = {
+        minArgs = 3,
+        maxArgs = 3,
+        types = { [1] = 'number', [2] = { 'number', 'nil' }, [3] = 'string' },
+        numberRanges = {
+            [1] = { integer = true, min = 1, max = 2147483647 },
+            [2] = { integer = true, min = 1, max = 4096 }
+        },
+        stringRules = { [3] = { minLen = 1, maxLen = 64 } }
     },
     ['lyxpanel:action:setReportPriority'] = {
         minArgs = 2,
@@ -854,6 +929,14 @@ local DefaultSchemas = {
         maxArgs = 1,
         types = { [1] = { 'boolean', 'nil' } }
     },
+    ['lyxpanel:action:reviveRadius'] = {
+        minArgs = 1,
+        maxArgs = 2,
+        types = { [1] = 'number', [2] = { 'boolean', 'nil' } },
+        numberRanges = {
+            [1] = { integer = true, min = 5, max = 500 }
+        }
+    },
     ['lyxpanel:action:scheduleAnnounce'] = {
         minArgs = 2,
         maxArgs = 3,
@@ -869,6 +952,16 @@ local DefaultSchemas = {
         maxArgs = 1,
         types = { [1] = 'number' },
         numberRanges = { [1] = { integer = true, min = 1, max = 4096 } }
+    },
+    ['lyxpanel:action:screenshotBatch'] = {
+        minArgs = 1,
+        maxArgs = 1,
+        types = { [1] = 'table' },
+        tableRules = {
+            [1] = {
+                maxKeys = 32
+            }
+        }
     },
     ['lyxpanel:action:setTime'] = {
         minArgs = 2,
@@ -916,6 +1009,10 @@ local DefaultSchemas = {
         maxArgs = 0
     },
     ['lyxpanel:action:teleportMarker'] = {
+        minArgs = 0,
+        maxArgs = 0
+    },
+    ['lyxpanel:action:teleportBack'] = {
         minArgs = 0,
         maxArgs = 0
     },
@@ -1260,6 +1357,13 @@ local DefaultSchemas = {
         minArgs = 0,
         maxArgs = 0
     },
+    ['lyxpanel:danger:approve'] = {
+        minArgs = 1,
+        maxArgs = 1,
+        types = { [1] = { 'number', 'string' } },
+        numberRanges = { [1] = { integer = true, min = 1, max = 2147483647 } },
+        stringRules = { [1] = { minLen = 1, maxLen = 16 } }
+    },
     ['lyxpanel:reports:create'] = {
         minArgs = 1,
         maxArgs = 2,
@@ -1579,6 +1683,9 @@ local function _GetCfg()
         schemaOnlyPrefixes = schemaOnlyPrefixes,
         requireActiveSession = cfg.requireActiveSession ~= false,
         sessionTtlMs = math.max(tonumber(cfg.sessionTtlMs) or (10 * 60 * 1000), 30000),
+        -- If the session state provider is unavailable, default behavior is fail-open to avoid breaking production.
+        -- In hostile environments you can set this to false to fail-closed.
+        sessionStateFailOpen = cfg.sessionStateFailOpen ~= false,
         maxEventsPerWindow = math.max(tonumber(cfg.maxEventsPerWindow) or 240, 10),
         windowMs = math.max(tonumber(cfg.windowMs) or 10000, 500),
         maxArgs = math.max(tonumber(cfg.maxArgs) or 12, 1),
@@ -1732,8 +1839,10 @@ local function _HasActivePanelSession(src, cfg)
         return ok == true and active == true
     end
 
-    -- If session state is unavailable, fail-open to avoid breaking production.
-    return true
+    -- If session state is unavailable:
+    -- - default is fail-open to avoid breaking production,
+    -- - in hostile mode you can set sessionStateFailOpen=false to fail-closed.
+    return cfg.sessionStateFailOpen ~= false
 end
 
 local function _HasSecurityEnvelopeArg(value)

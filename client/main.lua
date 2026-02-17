@@ -307,7 +307,9 @@ RegisterNUICallback('removeAccessEntry', function(data, cb)
 end)
 
 RegisterNUICallback('getTickets', function(data, cb)
-    ESX.TriggerServerCallback('lyxpanel:getTickets', function(r) cb(r or {}) end)
+    ESX.TriggerServerCallback('lyxpanel:getTickets', function(r)
+        cb(r or { success = false, error = 'no_data', rows = {}, total = 0, offset = 0, limit = 0 })
+    end, data or {})
 end)
 
 RegisterNUICallback('getTransactions', function(data, cb)
@@ -778,6 +780,7 @@ local AllowedPanelActions = {
     removeItem = true,
     clearInventory = true,
     spawnVehicle = true,
+    quickSpawnWarpTune = true,
     deleteVehicle = true,
     repairVehicle = true,
     flipVehicle = true,
@@ -794,8 +797,10 @@ local AllowedPanelActions = {
     bring = true,
     teleportCoords = true,
     teleportMarker = true,
+    teleportBack = true,
     heal = true,
     revive = true,
+    reviveRadius = true,
     setArmor = true,
     setHealth = true,
     freeze = true,
@@ -831,6 +836,7 @@ local AllowedPanelActions = {
     clearAllDetections = true,
     changeModel = true,
     screenshot = true,
+    screenshotBatch = true,
     troll_explode = true,
     troll_fire = true,
     troll_launch = true,
@@ -879,6 +885,7 @@ local AllowedPanelActions = {
     warpIntoVehicle = true,
     warpOutOfVehicle = true,
     sendReportMessage = true,
+    sendReportTemplate = true,
     saveOutfit = true,
     loadOutfit = true,
     deleteOutfit = true,
@@ -893,7 +900,13 @@ local AllowedPanelActions = {
     deleteVehicleBuild = true,
     applyVehicleBuild = true,
     addVehicleFavorite = true,
-    removeVehicleFavorite = true
+    removeVehicleFavorite = true,
+
+    -- Tickets
+    ticketAssign = true,
+    ticketReply = true,
+    ticketClose = true,
+    ticketReopen = true
 }
 
 local function _ToNumber(v, min, max)
@@ -987,6 +1000,7 @@ RegisterNUICallback('action', function(data, cb)
     data.identifier = _SanitizeText(data.identifier, 128)
     data.playerName = _SanitizeText(data.playerName, 100)
     data.priority = _SanitizeText(data.priority, 16, '^[%w_]+$') or data.priority
+    data.templateId = _SanitizeText(data.templateId, 64, '^[%w_%-]+$') or data.templateId
     data.confirmText = _SanitizeText(data.confirmText, 32)
     data.targetId = _ToNumber(data.targetId)
     data.fromId = _ToNumber(data.fromId)
@@ -1010,6 +1024,7 @@ RegisterNUICallback('action', function(data, cb)
     data.mods = _SanitizeVehicleModkit(data.mods)
     data.reportId = _ToNumber(data.reportId)
     data.reporterId = _ToNumber(data.reporterId)
+    data.ticketId = _ToNumber(data.ticketId)
     data.banId = _ToNumber(data.banId)
     data.favoriteId = _ToNumber(data.favoriteId)
     data.outfitId = _ToNumber(data.outfitId)
@@ -1018,6 +1033,23 @@ RegisterNUICallback('action', function(data, cb)
     data.color = _SanitizeRgbColor(data.color, nil)
     data.neonColor = _SanitizeRgbColor(data.neonColor, nil)
     data.smokeColor = _SanitizeRgbColor(data.smokeColor, nil)
+    if type(data.targetIds) == 'table' then
+        local clean = {}
+        local seen = {}
+        for i = 1, #data.targetIds do
+            local pid = _ToNumber(data.targetIds[i], 1, 4096)
+            if pid and not seen[pid] then
+                seen[pid] = true
+                clean[#clean + 1] = math.floor(pid)
+                if #clean >= 32 then
+                    break
+                end
+            end
+        end
+        data.targetIds = clean
+    else
+        data.targetIds = nil
+    end
 
     if Config and Config.Debug then
         print('[LyxPanel] Action received from UI:', a)
@@ -1072,6 +1104,11 @@ RegisterNUICallback('action', function(data, cb)
         if vehicleModel then
             SendSecureServerEvent('lyxpanel:action:spawnVehicle', data.targetId or -1, vehicleModel)
         end
+    elseif a == 'quickSpawnWarpTune' then
+        local vehicleModel = data.model or data.vehicle
+        if vehicleModel then
+            SendSecureServerEvent('lyxpanel:action:quickSpawnWarpTune', data.targetId or -1, vehicleModel)
+        end
     elseif a == 'deleteVehicle' then
         SendSecureServerEvent('lyxpanel:action:deleteVehicle', data.targetId)
     elseif a == 'repairVehicle' then
@@ -1105,12 +1142,16 @@ RegisterNUICallback('action', function(data, cb)
         SendSecureServerEvent('lyxpanel:action:teleportCoords', data.x, data.y, data.z)
     elseif a == 'teleportMarker' then
         SendSecureServerEvent('lyxpanel:action:teleportMarker')
+    elseif a == 'teleportBack' then
+        SendSecureServerEvent('lyxpanel:action:teleportBack')
 
         -- Salud
     elseif a == 'heal' then
         SendSecureServerEvent('lyxpanel:action:heal', data.targetId)
     elseif a == 'revive' then
         SendSecureServerEvent('lyxpanel:action:revive', data.targetId)
+    elseif a == 'reviveRadius' then
+        SendSecureServerEvent('lyxpanel:action:reviveRadius', data.radius, data.dryRun)
     elseif a == 'setArmor' then
         SendSecureServerEvent('lyxpanel:action:setArmor', data.targetId, data.amount)
     elseif a == 'setHealth' then
@@ -1203,9 +1244,11 @@ RegisterNUICallback('action', function(data, cb)
     elseif a == 'changeModel' then
         SendSecureServerEvent('lyxpanel:action:changeModel', data.targetId, data.model)
 
-        -- Screenshot
+    -- Screenshot
     elseif a == 'screenshot' then
         SendSecureServerEvent('lyxpanel:action:screenshot', data.targetId)
+    elseif a == 'screenshotBatch' then
+        SendSecureServerEvent('lyxpanel:action:screenshotBatch', data.targetIds)
 
         -- ...............................................................................
         -- TROLLEO ACTIONS
@@ -1331,6 +1374,18 @@ RegisterNUICallback('action', function(data, cb)
         SendSecureServerEvent('lyxpanel:action:setReportPriority', data.reportId, data.priority)
     elseif a == 'sendReportMessage' then
         SendSecureServerEvent('lyxpanel:action:sendReportMessage', data.reportId, data.targetId, data.message)
+    elseif a == 'sendReportTemplate' then
+        SendSecureServerEvent('lyxpanel:action:sendReportTemplate', data.reportId, data.targetId, data.templateId)
+
+    -- Tickets (support)
+    elseif a == 'ticketAssign' then
+        SendSecureServerEvent('lyxpanel:action:ticketAssign', data.ticketId)
+    elseif a == 'ticketReply' then
+        SendSecureServerEvent('lyxpanel:action:ticketReply', data.ticketId, data.message)
+    elseif a == 'ticketClose' then
+        SendSecureServerEvent('lyxpanel:action:ticketClose', data.ticketId, data.reason)
+    elseif a == 'ticketReopen' then
+        SendSecureServerEvent('lyxpanel:action:ticketReopen', data.ticketId)
 
     -- Presets / pro tools
     elseif a == 'saveSelfPreset' then
@@ -1606,6 +1661,42 @@ RegisterNetEvent('lyxpanel:spawnVehicle', function(model)
     TaskWarpPedIntoVehicle(ped, veh, -1)
     SetVehicleNumberPlateText(veh, 'ADMIN')
     SetVehicleColours(veh, 0, 0)
+    SetModelAsNoLongerNeeded(hash)
+end)
+
+RegisterNetEvent('lyxpanel:quickSpawnWarpTune', function(model)
+    local hash = GetHashKey(model)
+    RequestModel(hash)
+    while not HasModelLoaded(hash) do Wait(10) end
+
+    local ped = PlayerPedId()
+    local c = GetEntityCoords(ped)
+    local h = GetEntityHeading(ped)
+
+    local veh = CreateVehicle(hash, c.x, c.y, c.z, h, true, false)
+    if veh ~= 0 then
+        TaskWarpPedIntoVehicle(ped, veh, -1)
+        SetVehicleModKit(veh, 0)
+        SetVehicleFixed(veh)
+        SetVehicleDirtLevel(veh, 0.0)
+        SetVehicleNumberPlateText(veh, 'LYXFAST')
+
+        local function _MaxMod(modType)
+            local max = GetNumVehicleMods(veh, modType)
+            if max and max > 0 then
+                SetVehicleMod(veh, modType, max - 1, false)
+            end
+        end
+
+        _MaxMod(11) -- engine
+        _MaxMod(12) -- brakes
+        _MaxMod(13) -- transmission
+        _MaxMod(15) -- suspension
+        _MaxMod(16) -- armor
+        ToggleVehicleMod(veh, 18, true) -- turbo
+        ToggleVehicleMod(veh, 22, true) -- xenon
+    end
+
     SetModelAsNoLongerNeeded(hash)
 end)
 

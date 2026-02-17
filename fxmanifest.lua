@@ -23,6 +23,7 @@ server_scripts {
     'server/permissions_store.lua',
     'server/access_store.lua',
     'server/main.lua',
+    'server/tickets.lua',
     'server/event_firewall.lua',
     'server/actions.lua',
     'server/actions_extended.lua',

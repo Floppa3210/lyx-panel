@@ -38,21 +38,110 @@ function extractRegisterNetEvents(luaText) {
   return out;
 }
 
-function extractAllowlistKeys(luaText) {
-  // We only care about keys explicitly set to true in tables.
+function extractLuaTableBlock(luaText, tableName) {
+  // Very small Lua parser for `local <name> = { ... }` style tables.
+  // Goal is to avoid false positives by only scanning the specific tables we care about.
+  const re = new RegExp(`\\b${tableName}\\b\\s*=\\s*{`);
+  const m = re.exec(luaText);
+  if (!m) return null;
+
+  let i = m.index + m[0].length - 1; // points to the opening "{"
+  let depth = 0;
+  let start = -1;
+  let end = -1;
+
+  let inSingle = false;
+  let inDouble = false;
+  let inLineComment = false;
+  let inBlockComment = false;
+
+  for (; i < luaText.length; i++) {
+    const ch = luaText[i];
+    const next = i + 1 < luaText.length ? luaText[i + 1] : "";
+    const next2 = i + 2 < luaText.length ? luaText[i + 2] : "";
+    const next3 = i + 3 < luaText.length ? luaText[i + 3] : "";
+
+    if (inLineComment) {
+      if (ch === "\n") inLineComment = false;
+      continue;
+    }
+    if (inBlockComment) {
+      if (ch === "]" && next === "]") {
+        inBlockComment = false;
+        i++;
+      }
+      continue;
+    }
+    if (inSingle) {
+      if (ch === "\\") {
+        i++;
+        continue;
+      }
+      if (ch === "'") inSingle = false;
+      continue;
+    }
+    if (inDouble) {
+      if (ch === "\\") {
+        i++;
+        continue;
+      }
+      if (ch === '"') inDouble = false;
+      continue;
+    }
+
+    if (ch === "-" && next === "-") {
+      if (next2 === "[" && next3 === "[") {
+        inBlockComment = true;
+        i += 3;
+      } else {
+        inLineComment = true;
+        i++;
+      }
+      continue;
+    }
+    if (ch === "'") {
+      inSingle = true;
+      continue;
+    }
+    if (ch === '"') {
+      inDouble = true;
+      continue;
+    }
+
+    if (ch === "{") {
+      if (depth === 0) start = i;
+      depth++;
+      continue;
+    }
+    if (ch === "}") {
+      depth--;
+      if (depth === 0) {
+        end = i;
+        break;
+      }
+      continue;
+    }
+  }
+
+  if (start === -1 || end === -1) return null;
+  return luaText.slice(start, end + 1);
+}
+
+function extractAllowlistKeysFromBlock(luaBlockText) {
   const out = new Set();
-  const re1 = /\[['"]([^'"]+)['"]\]\s*=\s*true/g;
+  if (!luaBlockText) return out;
+  const re = /\[['"]([^'"]+)['"]\]\s*=\s*true/g;
   let m;
-  while ((m = re1.exec(luaText))) out.add(m[1]);
+  while ((m = re.exec(luaBlockText))) out.add(m[1]);
   return out;
 }
 
-function extractSchemaKeys(luaText) {
-  // Keys assigned to a table literal: ['event'] = { ... }
+function extractTableKeysFromBlock(luaBlockText) {
   const out = new Set();
+  if (!luaBlockText) return out;
   const re = /\[['"]([^'"]+)['"]\]\s*=\s*{\s*/g;
   let m;
-  while ((m = re.exec(luaText))) out.add(m[1]);
+  while ((m = re.exec(luaBlockText))) out.add(m[1]);
   return out;
 }
 
@@ -72,8 +161,13 @@ function main() {
   }
 
   const firewallTxt = readText(firewallPath);
-  const allowlist = extractAllowlistKeys(firewallTxt);
-  const schemas = extractSchemaKeys(firewallTxt);
+  const allowlistBlock = extractLuaTableBlock(firewallTxt, "DefaultAllowlist");
+  const schemasBlock = extractLuaTableBlock(firewallTxt, "DefaultSchemas");
+  const protectedBlock = extractLuaTableBlock(firewallTxt, "DefaultProtectedEvents");
+
+  const allowlist = extractAllowlistKeysFromBlock(allowlistBlock);
+  const schemas = extractTableKeysFromBlock(schemasBlock);
+  const protectedEvents = extractTableKeysFromBlock(protectedBlock);
 
   const actionEvents = [...registered].filter((e) => e.startsWith("lyxpanel:action:"));
   const missingAllowlist = actionEvents.filter((e) => !allowlist.has(e));
@@ -83,14 +177,41 @@ function main() {
   const allowlistedActions = [...allowlist].filter((e) => e.startsWith("lyxpanel:action:"));
   const allowlistedWithoutSchema = allowlistedActions.filter((e) => !schemas.has(e));
 
+  const mustBeProtected = [
+    "lyxpanel:danger:approve",
+    "lyxpanel:reports:claim",
+    "lyxpanel:reports:resolve",
+    "lyxpanel:reports:get",
+    "lyxpanel:staffcmd:requestRevive",
+    "lyxpanel:staffcmd:requestInstantRespawn",
+    "lyxpanel:staffcmd:requestAmmoRefill",
+  ];
+  const missingProtected = mustBeProtected.filter((e) => !protectedEvents.has(e));
+  const missingProtectedSchema = mustBeProtected.filter((e) => !schemas.has(e));
+
+  // Ensure every protected event has an explicit schema (we want schema coverage for all sensitive events).
+  const protectedWithoutSchema = [...protectedEvents].filter((e) => !schemas.has(e));
+
+  // Strong mode: every lyxpanel:* server event should have a schema entry in DefaultSchemas.
+  const lyxpanelServerEvents = [...registered].filter((e) => e.startsWith("lyxpanel:"));
+  const missingSchemaLyxpanel = lyxpanelServerEvents.filter((e) => !schemas.has(e));
+
   const issues = [];
   if (missingAllowlist.length) issues.push({ title: "Missing allowlist entries", items: missingAllowlist });
   if (missingSchema.length) issues.push({ title: "Missing schema entries", items: missingSchema });
   if (allowlistedWithoutSchema.length)
     issues.push({ title: "Allowlisted actions without schema", items: allowlistedWithoutSchema });
+  if (missingProtected.length)
+    issues.push({ title: "Missing protected critical events", items: missingProtected });
+  if (missingProtectedSchema.length)
+    issues.push({ title: "Missing schema for critical protected events", items: missingProtectedSchema });
+  if (protectedWithoutSchema.length)
+    issues.push({ title: "Protected events without schema", items: protectedWithoutSchema });
+  if (missingSchemaLyxpanel.length)
+    issues.push({ title: "lyxpanel:* server events without schema", items: missingSchemaLyxpanel });
 
   if (!issues.length) {
-    console.log("[OK] lyxpanel:action:* allowlist + schema coverage looks complete.");
+    console.log("[OK] lyxpanel events: allowlist + schema + protected coverage look complete.");
     return;
   }
 
@@ -104,4 +225,3 @@ function main() {
 }
 
 main();
-

@@ -99,6 +99,233 @@
     };
   }
 
+  // ---------------------------------------------------------------------------
+  // Tickets (support) - in-game workflow for staff
+  // ---------------------------------------------------------------------------
+
+  const TicketsState = {
+    offset: 0,
+    limit: 50,
+    total: 0,
+    rows: [],
+    selectedId: null,
+  };
+
+  function getEl(id) {
+    return document.getElementById(id);
+  }
+
+  function readTicketsFilters() {
+    const status = (getEl('ticketStatus') && getEl('ticketStatus').value) || '';
+    const search = sanitizeUiText((getEl('ticketSearch') && getEl('ticketSearch').value) || '');
+    const limit = toInt((getEl('ticketLimit') && getEl('ticketLimit').value) || '50', 50);
+    TicketsState.limit = Math.min(200, Math.max(10, limit));
+    return { status, search, limit: TicketsState.limit, offset: TicketsState.offset };
+  }
+
+  function fmtTicketStatus(s) {
+    const v = String(s || '').toLowerCase();
+    if (v === 'open') return '<span class="badge badge-danger">abierto</span>';
+    if (v === 'answered') return '<span class="badge badge-info">respondido</span>';
+    if (v === 'closed') return '<span class="badge badge-success">cerrado</span>';
+    return esc(v || 'n/a');
+  }
+
+  function renderTicketsTable() {
+    const body = getEl('ticketsTableBody');
+    if (!body) return;
+
+    const rows = TicketsState.rows || [];
+    if (!rows.length) {
+      body.innerHTML = '<tr><td colspan="6" style="color: var(--text-secondary);">Sin tickets</td></tr>';
+      return;
+    }
+
+    body.innerHTML = rows.map((t) => {
+      const id = Number(t.id || 0);
+      const selected = TicketsState.selectedId === id ? ' selected' : '';
+      const assigned = sanitizeUiText(t.assigned_to_name || '');
+      const created = sanitizeUiText(t.created_at || '');
+      return (
+        `<tr class="ticket-row${selected}" data-ticket-id="${id}">` +
+          `<td>#${id}</td>` +
+          `<td>${esc(sanitizeUiText(t.player_name || ''))}</td>` +
+          `<td>${esc(sanitizeUiText(t.subject || ''))}</td>` +
+          `<td>${fmtTicketStatus(t.status)}</td>` +
+          `<td>${esc(assigned || '-')}</td>` +
+          `<td>${esc(created || '')}</td>` +
+        `</tr>`
+      );
+    }).join('');
+
+    // Click handlers
+    body.querySelectorAll('tr.ticket-row').forEach((tr) => {
+      tr.addEventListener('click', () => {
+        const id = toInt(tr.getAttribute('data-ticket-id'), 0);
+        if (!id) return;
+        ticketSelect(id);
+      });
+    });
+  }
+
+  function updateTicketsPageInfo() {
+    const el = getEl('ticketPageInfo');
+    if (!el) return;
+    const total = TicketsState.total || 0;
+    const start = total === 0 ? 0 : TicketsState.offset + 1;
+    const end = Math.min(total, TicketsState.offset + (TicketsState.limit || 0));
+    el.textContent = `${start}-${end} / ${total}`;
+  }
+
+  function renderTicketDetail() {
+    const titleEl = getEl('ticketDetailTitle');
+    const subEl = getEl('ticketDetailSub');
+    const msgEl = getEl('ticketDetailMessage');
+    const respEl = getEl('ticketDetailResponse');
+    if (!titleEl || !subEl || !msgEl || !respEl) return;
+
+    const id = TicketsState.selectedId;
+    const t = (TicketsState.rows || []).find((r) => Number(r.id || 0) === Number(id || 0));
+    if (!t) {
+      titleEl.textContent = 'Selecciona un ticket';
+      subEl.textContent = '';
+      msgEl.textContent = '-';
+      respEl.textContent = '-';
+      return;
+    }
+
+    const player = sanitizeUiText(t.player_name || '');
+    const subj = sanitizeUiText(t.subject || '');
+    const status = String(t.status || '').toLowerCase();
+    const assigned = sanitizeUiText(t.assigned_to_name || '');
+
+    titleEl.textContent = `#${t.id} | ${subj || 'Ticket'}`;
+    subEl.textContent = `${player || 'Jugador'} | ${status || 'n/a'} | asignado: ${assigned || '-'}`;
+    msgEl.textContent = sanitizeUiText(t.message || '');
+    respEl.textContent = sanitizeUiText(t.admin_response || '');
+  }
+
+  async function loadTickets(resetOffset) {
+    try {
+      if (resetOffset === true) TicketsState.offset = 0;
+      const filters = readTicketsFilters();
+      const resp = await window.postNuiJson('getTickets', filters);
+      if (!resp || resp.success !== true) {
+        notify('error', 'No se pudo cargar tickets');
+        TicketsState.rows = [];
+        TicketsState.total = 0;
+        renderTicketsTable();
+        updateTicketsPageInfo();
+        renderTicketDetail();
+        return;
+      }
+
+      TicketsState.rows = Array.isArray(resp.rows) ? resp.rows : [];
+      TicketsState.total = toInt(resp.total, TicketsState.rows.length || 0);
+      // Keep selected in sync if it no longer exists.
+      if (TicketsState.selectedId) {
+        const exists = TicketsState.rows.some((r) => Number(r.id || 0) === Number(TicketsState.selectedId));
+        if (!exists) TicketsState.selectedId = null;
+      }
+
+      renderTicketsTable();
+      updateTicketsPageInfo();
+      renderTicketDetail();
+    } catch (e) {
+      notify('error', 'Error cargando tickets');
+      // eslint-disable-next-line no-console
+      console.error(e);
+    }
+  }
+
+  function ticketSelect(id) {
+    TicketsState.selectedId = Number(id || 0) || null;
+    renderTicketsTable();
+    renderTicketDetail();
+  }
+
+  function ticketsPrev() {
+    TicketsState.offset = Math.max(0, TicketsState.offset - (TicketsState.limit || 50));
+    loadTickets(false);
+  }
+
+  function ticketsNext() {
+    const next = TicketsState.offset + (TicketsState.limit || 50);
+    if (next >= (TicketsState.total || 0)) return;
+    TicketsState.offset = next;
+    loadTickets(false);
+  }
+
+  function ticketsReset() {
+    const s = getEl('ticketStatus');
+    const q = getEl('ticketSearch');
+    const l = getEl('ticketLimit');
+    if (s) s.value = '';
+    if (q) q.value = '';
+    if (l) l.value = '50';
+    TicketsState.offset = 0;
+    TicketsState.selectedId = null;
+    loadTickets(true);
+  }
+
+  function canManageTickets() {
+    try {
+      if (typeof window.perm === 'function') {
+        return window.perm('canManageTickets') || window.perm('canUseTickets');
+      }
+    } catch (_) {}
+    return true;
+  }
+
+  function ticketAssignMe() {
+    if (!canManageTickets()) return notify('error', 'Sin permisos');
+    if (!TicketsState.selectedId) return notify('warning', 'Selecciona un ticket');
+    window.postNuiJson('action', { action: 'ticketAssign', ticketId: TicketsState.selectedId }).then(() => {
+      setTimeout(() => loadTickets(false), 600);
+    });
+  }
+
+  function ticketReply() {
+    if (!canManageTickets()) return notify('error', 'Sin permisos');
+    if (!TicketsState.selectedId) return notify('warning', 'Selecciona un ticket');
+    const ta = getEl('ticketReplyText');
+    const msg = sanitizeUiText(ta ? ta.value : '');
+    if (!msg) return notify('warning', 'Respuesta vacia');
+    if (ta) ta.value = '';
+    window.postNuiJson('action', { action: 'ticketReply', ticketId: TicketsState.selectedId, message: msg }).then(() => {
+      setTimeout(() => loadTickets(false), 650);
+    });
+  }
+
+  function ticketClose() {
+    if (!canManageTickets()) return notify('error', 'Sin permisos');
+    if (!TicketsState.selectedId) return notify('warning', 'Selecciona un ticket');
+    const input = getEl('ticketCloseReason');
+    const reason = sanitizeUiText(input ? input.value : '');
+    if (input) input.value = '';
+    window.postNuiJson('action', { action: 'ticketClose', ticketId: TicketsState.selectedId, reason }).then(() => {
+      setTimeout(() => loadTickets(false), 650);
+    });
+  }
+
+  function ticketReopen() {
+    if (!canManageTickets()) return notify('error', 'Sin permisos');
+    if (!TicketsState.selectedId) return notify('warning', 'Selecciona un ticket');
+    window.postNuiJson('action', { action: 'ticketReopen', ticketId: TicketsState.selectedId }).then(() => {
+      setTimeout(() => loadTickets(false), 650);
+    });
+  }
+
+  window.loadTickets = loadTickets;
+  window.ticketsPrev = ticketsPrev;
+  window.ticketsNext = ticketsNext;
+  window.ticketsReset = ticketsReset;
+  window.ticketAssignMe = ticketAssignMe;
+  window.ticketReply = ticketReply;
+  window.ticketClose = ticketClose;
+  window.ticketReopen = ticketReopen;
+
+
   if (typeof window.sendNUI !== 'function') {
     window.sendNUI = function sendNUI(payload, cb) {
       return window.postNuiJson('action', payload || {}).then((resp) => {

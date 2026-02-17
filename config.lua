@@ -170,6 +170,7 @@ Config.ProfilePresets = {
                 maxStringLen = 320,
                 requireActiveSession = true,
                 sessionTtlMs = 6 * 60 * 1000,
+                sessionStateFailOpen = false,
                 actionSecurity = {
                     tokenTtlMs = 2 * 60 * 1000,
                     nonceTtlMs = 3 * 60 * 1000,
@@ -226,7 +227,9 @@ Config.ProfilePresets.production_64 = Config.ProfilePresets.production_high_load
         bring = 750,
         teleportCoords = 750,
         teleportMarker = 750,
+        teleportBack = 750,
         revive = 750,
+        reviveRadius = 12000,
         setArmor = 750,
         setHealth = 750,
         freeze = 750,
@@ -235,6 +238,7 @@ Config.ProfilePresets.production_64 = Config.ProfilePresets.production_high_load
 
         -- Vehiculos (actions.lua)
         spawnVehicle = 1000,
+        quickSpawnWarpTune = 1500,
         deleteVehicle = 750,
         repairVehicle = 750,
         flipVehicle = 750,
@@ -260,6 +264,7 @@ Config.ProfilePresets.production_64 = Config.ProfilePresets.production_high_load
         adminChat = 750,
         changeModel = 1500,
         screenshot = 5000,
+        screenshotBatch = 12000,
         trollAction = 750,
 
         clearInventory = 1500,
@@ -326,9 +331,17 @@ Config.ProfilePresets.production_64 = Config.ProfilePresets.production_high_load
         setReportPriority = 750,
         tpToReporter = 1000,
         sendReportMessage = 750,
+        sendReportTemplate = 750,
         reportsClaim = 750,
         reportsResolve = 750,
-        reportsGet = 1500
+        reportsGet = 1500,
+
+        -- Tickets (support)
+        ticketAssign = 900,
+        ticketReply = 1200,
+        ticketClose = 1200,
+        ticketReopen = 900,
+        ticketCreate = 120000
     },
 
     -- Ventanas de "safe-state" para evitar falsos positivos en LyxGuard cuando el panel ejecuta acciones legitimas.
@@ -349,15 +362,26 @@ Config.ProfilePresets.production_64 = Config.ProfilePresets.production_high_load
     maxAnnouncementLength = 250,
     maxSearchTermLength = 50,
     maxVehicleModelLength = 32,
+    maxScreenshotBatchTargets = 12,
     maxPlateLength = 8,
     maxLicenseTypeLength = 64,
     maxScheduleAnnouncements = 50,
     maxScheduleDelayMinutes = 1440,
     maxScheduleRepeatMinutes = 1440,
+    maxTicketSubjectLength = 120,
+    maxTicketMessageLength = 800,
+    maxTicketReplyLength = 900,
 
     -- Outfits (features_v45.lua)
     maxOutfitJsonLength = 12000,
-    maxOutfitsPerPlayer = 50
+    maxOutfitsPerPlayer = 50,
+
+    -- Teleport back stack (server-side memory only).
+    teleportBack = {
+        ttlMs = 10 * 60 * 1000,
+        maxEntries = 12,
+        minDistance = 1.5
+    }
 }
 
 -- ---------------------------------------------------------------------------
@@ -389,6 +413,9 @@ Config.Security = {
         },
         requireActiveSession = true, -- acciones admin requieren sesion activa de panel
         sessionTtlMs = 10 * 60 * 1000,
+        -- If the session state provider is unavailable, default is fail-open to avoid breaking production.
+        -- Set to false in hostile environments to fail-closed.
+        sessionStateFailOpen = true,
 
         -- High enough for real admin usage; blocks only obvious spam bursts.
         maxEventsPerWindow = 240,
@@ -516,17 +543,33 @@ Config.Permissions = {
             'wipePlayer',   -- Borrar datos del jugador
             'resetEconomy', -- Resetear economa
             'clearAllBans', -- Limpiar todos los bans
+            'clearAllDetections',
+            'clearLogs',
         },
         -- Acciones que requieren doble confirmacin
         requireDoubleConfirm = {
             'wipePlayer',
             'banPermanent',
             'resetEconomy',
+            'reviveRadius',
         },
         -- Texto que debe escribirse para confirmar
         confirmationText = 'CONFIRMO',
         -- Tiempo minimo entre acciones peligrosas (segundos)
-        cooldown = 30
+        cooldown = 30,
+        -- Si esta activo, requiere aprobacion de un segundo admin para acciones en requireDoubleConfirm.
+        enforceSecondAdmin = false,
+        approvalTtlSeconds = 120,
+        -- Bloqueo horario opcional para acciones peligrosas.
+        -- Si startHour > endHour, se interpreta ventana que cruza medianoche.
+        allowedWindow = {
+            enabled = false,
+            useUtc = false,
+            startHour = 0,
+            endHour = 23
+        },
+        -- Notificar a otros admins aptos cuando haya una accion esperando aprobacion.
+        notifyAllAdmins = true
     },
 
     rolePermissions = {
@@ -602,6 +645,7 @@ Config.Permissions = {
             canWelcomeBanner = true,
             canMaintenanceMsg = true,
             canUseTickets = true,
+            canManageTickets = true,
             canAdminChat = true,
 
             -- Jugador info
@@ -692,6 +736,8 @@ Config.Permissions = {
             canViewFaction = true,
             canAnnounce = true,
             canPrivateChat = true,
+            canUseTickets = true,
+            canManageTickets = true,
             canViewLogs = true,
             canManageBans = true,
             canManageReports = true,
@@ -713,6 +759,7 @@ Config.Permissions = {
             canFreeze = true,
             canSpectate = true,
             canViewLogs = true,
+            canUseTickets = true,
             canManageBans = true,
             canManageReports = true,
             canNoclip = true,
@@ -726,6 +773,7 @@ Config.Permissions = {
             canHeal = true,
             canRevive = true,
             canSpectate = true,
+            canUseTickets = true,
             canManageReports = true
         },
         ['helper'] = {
@@ -788,6 +836,8 @@ Config.Permissions = {
             canPrivateChat = true,
             canAdminChat = true,
             canMegaphone = true,
+            canUseTickets = true,
+            canManageTickets = true,
             canViewLogs = true,
             canPurgeLogs = true,
             canManageBans = true,
@@ -865,6 +915,8 @@ Config.Permissions = {
             canSpawnNPC = true,
             canAnnounce = true,
             canPrivateChat = true,
+            canUseTickets = true,
+            canManageTickets = true,
             canAdminChat = true,
             canMegaphone = true,
             canViewLogs = true,

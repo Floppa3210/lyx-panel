@@ -1562,6 +1562,84 @@ CreateThread(function()
         end)
     end)
 
+    ESX.RegisterServerCallback('lyxpanel:getMaintenanceStatus', function(source, cb)
+        if not HasPanelAccess(source) then
+            return cb({ success = false, error = 'no_permission' })
+        end
+
+        local status = {
+            success = true,
+            timestamp = os.date('!%Y-%m-%dT%H:%M:%SZ'),
+            guardAvailable = (LyxPanel and LyxPanel.IsLyxGuardAvailable and LyxPanel.IsLyxGuardAvailable()) or false,
+            db = {
+                ok = true,
+                panelMigrations = 0,
+                guardMigrations = 0
+            },
+            tables = {
+                reports = 0,
+                logs = 0,
+                notes = 0
+            },
+            dangerousApprovals = {
+                count = 0,
+                rows = {}
+            }
+        }
+
+        local pending = 1
+        local function done()
+            pending = pending - 1
+            if pending == 0 then
+                cb(status)
+            end
+        end
+
+        pending = pending + 1
+        MySQL.scalar('SELECT COUNT(*) FROM lyxpanel_schema_migrations', {}, function(v)
+            status.db.panelMigrations = tonumber(v) or 0
+            done()
+        end)
+
+        pending = pending + 1
+        MySQL.scalar('SELECT COUNT(*) FROM lyxpanel_reports', {}, function(v)
+            status.tables.reports = tonumber(v) or 0
+            done()
+        end)
+
+        pending = pending + 1
+        MySQL.scalar('SELECT COUNT(*) FROM lyxpanel_logs', {}, function(v)
+            status.tables.logs = tonumber(v) or 0
+            done()
+        end)
+
+        pending = pending + 1
+        MySQL.scalar('SELECT COUNT(*) FROM lyxpanel_notes', {}, function(v)
+            status.tables.notes = tonumber(v) or 0
+            done()
+        end)
+
+        if status.guardAvailable then
+            pending = pending + 1
+            MySQL.scalar('SELECT COUNT(*) FROM lyxguard_schema_migrations', {}, function(v)
+                status.db.guardMigrations = tonumber(v) or 0
+                done()
+            end)
+        end
+
+        if exports['lyx-panel'] and exports['lyx-panel'].GetDangerApprovalsState then
+            local ok, data = pcall(function()
+                return exports['lyx-panel']:GetDangerApprovalsState()
+            end)
+            if ok and type(data) == 'table' then
+                status.dangerousApprovals.count = tonumber(data.count) or 0
+                status.dangerousApprovals.rows = data.rows or {}
+            end
+        end
+
+        done()
+    end)
+
     ESX.RegisterServerCallback('lyxpanel:getDetections', function(source, cb, limit)
         if not HasPermission(source, 'canViewLogs') then return cb({}) end
         if not (LyxPanel and LyxPanel.IsLyxGuardAvailable and LyxPanel.IsLyxGuardAvailable()) then
@@ -1583,6 +1661,9 @@ CreateThread(function()
 
     ESX.RegisterServerCallback('lyxpanel:getReports', function(source, cb)
         if not HasPermission(source, 'canManageReports') then return cb({}) end
+        if LyxPanel and LyxPanel.ReportSystem and LyxPanel.ReportSystem.GetReportQueue then
+            return cb(LyxPanel.ReportSystem.GetReportQueue(200) or {})
+        end
         MySQL.query('SELECT * FROM lyxpanel_reports ORDER BY created_at DESC', {}, function(r) cb(r or {}) end)
     end)
 
@@ -2174,9 +2255,60 @@ CreateThread(function()
         cb({ success = ok == true, error = err })
     end)
 
-    ESX.RegisterServerCallback('lyxpanel:getTickets', function(source, cb)
-        if not HasPermission(source, 'canUseTickets') then return cb({}) end
-        MySQL.query('SELECT * FROM lyxpanel_tickets ORDER BY created_at DESC', {}, function(r) cb(r or {}) end)
+    ESX.RegisterServerCallback('lyxpanel:getTickets', function(source, cb, opts)
+        if not HasPermission(source, 'canUseTickets') then
+            return cb({ success = false, error = 'no_permission', rows = {}, total = 0, offset = 0, limit = 0 })
+        end
+
+        opts = type(opts) == 'table' and opts or {}
+        local status = tostring(opts.status or '')
+        status = status:match('^%s*(.-)%s*$') or status
+        status = status:lower()
+        if status ~= 'open' and status ~= 'answered' and status ~= 'closed' then
+            status = ''
+        end
+
+        local search = tostring(opts.search or '')
+        search = search:match('^%s*(.-)%s*$') or search
+        local maxSearch = (Config and Config.ActionLimits and tonumber(Config.ActionLimits.maxSearchTermLength)) or 50
+        if #search > maxSearch then
+            search = search:sub(1, maxSearch)
+        end
+
+        local offset = tonumber(opts.offset) or 0
+        local limit = tonumber(opts.limit) or 50
+        if offset < 0 then offset = 0 end
+        if limit < 10 then limit = 10 end
+        if limit > 200 then limit = 200 end
+
+        local where = '1=1'
+        local params = {}
+        if status ~= '' then
+            where = where .. ' AND status = ?'
+            params[#params + 1] = status
+        end
+        if search ~= '' then
+            where = where .. ' AND (player_name LIKE ? OR subject LIKE ? OR message LIKE ?)'
+            local like = '%' .. search .. '%'
+            params[#params + 1] = like
+            params[#params + 1] = like
+            params[#params + 1] = like
+        end
+
+        MySQL.query(('SELECT COUNT(*) AS c FROM lyxpanel_tickets WHERE %s'):format(where), params, function(countRows)
+            local total = tonumber(countRows and countRows[1] and countRows[1].c) or 0
+            local sql = ('SELECT * FROM lyxpanel_tickets WHERE %s ORDER BY created_at DESC LIMIT %d OFFSET %d')
+                :format(where, math.floor(limit), math.floor(offset))
+            MySQL.query(sql, params, function(rows)
+                cb({
+                    success = true,
+                    rows = rows or {},
+                    total = total,
+                    offset = math.floor(offset),
+                    limit = math.floor(limit)
+                })
+            end)
+        end)
     end)
 
     ESX.RegisterServerCallback('lyxpanel:getJobs', function(source, cb)

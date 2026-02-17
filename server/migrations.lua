@@ -382,6 +382,24 @@ local MIGRATIONS = {
         version = 5,
         name = 'presets_and_vehicle_tables',
         up = _CreatePresetTables()
+    },
+    {
+        version = 6,
+        name = 'tickets_workflow_fields',
+        up = function()
+            if not _ColumnExists('lyxpanel_tickets', 'assigned_to_id') then
+                _Exec('ALTER TABLE lyxpanel_tickets ADD COLUMN assigned_to_id VARCHAR(255) DEFAULT NULL')
+            end
+            if not _ColumnExists('lyxpanel_tickets', 'assigned_to_name') then
+                _Exec('ALTER TABLE lyxpanel_tickets ADD COLUMN assigned_to_name VARCHAR(100) DEFAULT NULL')
+            end
+            if not _ColumnExists('lyxpanel_tickets', 'updated_at') then
+                _Exec('ALTER TABLE lyxpanel_tickets ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP')
+            end
+            if not _ColumnExists('lyxpanel_tickets', 'closed_at') then
+                _Exec('ALTER TABLE lyxpanel_tickets ADD COLUMN closed_at DATETIME DEFAULT NULL')
+            end
+        end
     }
 }
 

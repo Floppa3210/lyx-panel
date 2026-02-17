@@ -100,6 +100,144 @@ local function _FindOnlineByLicense(license)
     return nil
 end
 
+local _PriorityRank = {
+    low = 1,
+    medium = 2,
+    high = 3,
+    critical = 4
+}
+
+local _DefaultRunbooks = {
+    low = {
+        { id = 'ack', title = 'Acusar recibo', description = 'Confirmar recepcion al jugador reportante.' },
+        { id = 'review_context', title = 'Revisar contexto', description = 'Leer razon completa y validar datos basicos.' },
+        { id = 'close_note', title = 'Cerrar con nota', description = 'Documentar cierre en reporte y log.' }
+    },
+    medium = {
+        { id = 'ack', title = 'Acusar recibo', description = 'Confirmar recepcion al jugador reportante.' },
+        { id = 'contact_players', title = 'Contactar involucrados', description = 'Pedir version breve a reportante y reportado.' },
+        { id = 'collect_evidence', title = 'Recolectar evidencia', description = 'Revisar historial/logs antes de sancionar.' },
+        { id = 'resolve_action', title = 'Resolver', description = 'Aplicar accion proporcional y dejar trazabilidad.' }
+    },
+    high = {
+        { id = 'ack', title = 'Acusar recibo urgente', description = 'Responder rapido e iniciar investigacion.' },
+        { id = 'freeze_risk', title = 'Contener riesgo', description = 'Aplicar medidas temporales si hay abuso en curso.' },
+        { id = 'collect_evidence', title = 'Recolectar evidencia', description = 'Correlacionar logs, detecciones y acciones previas.' },
+        { id = 'staff_review', title = 'Revision staff', description = 'Confirmar accion con otro admin si aplica.' },
+        { id = 'resolve_action', title = 'Resolver y auditar', description = 'Ejecutar accion final y documentar resultado.' }
+    },
+    critical = {
+        { id = 'ack', title = 'Incidente critico', description = 'Marcar incidente y notificar staff de guardia.' },
+        { id = 'containment', title = 'Contencion inmediata', description = 'Bloquear impacto activo (quarantine/kick/ban segun evidencia).' },
+        { id = 'evidence_pack', title = 'Evidence pack', description = 'Guardar trazas previas (timeline, eventos, identificadores).' },
+        { id = 'dual_review', title = 'Revision dual', description = 'Confirmar accion extrema con segundo admin cuando sea posible.' },
+        { id = 'postmortem', title = 'Cierre tecnico', description = 'Registrar causa raiz y acciones de seguimiento.' }
+    }
+}
+
+local _PriorityKeywords = {
+    critical = {
+        'crash', 'dupe', 'exploit', 'inject', 'injector', 'executor', 'backdoor',
+        'spoof', 'admin event', 'txadmin', 'wipe', 'ddos', 'overflow'
+    },
+    high = {
+        'cheat', 'aimbot', 'triggerbot', 'godmode', 'noclip', 'speedhack',
+        'money', 'dinero', 'economia', 'inventario', 'weapon', 'arma'
+    },
+    medium = {
+        'meta', 'toxic', 'insulto', 'spam', 'acoso', 'bug', 'abuso'
+    }
+}
+
+local function _NormalizePriority(priority)
+    local p = tostring(priority or ''):lower():match('^%s*(.-)%s*$')
+    if p == 'low' or p == 'medium' or p == 'high' or p == 'critical' then
+        return p
+    end
+    local cfg = Config and Config.ReportPriority or nil
+    local def = cfg and tostring(cfg.defaultPriority or ''):lower() or ''
+    if def == 'low' or def == 'medium' or def == 'high' or def == 'critical' then
+        return def
+    end
+    return 'medium'
+end
+
+local function _AutoPriorityFromReason(reason, targetId)
+    local text = tostring(reason or ''):lower()
+    local score = 0
+
+    local function addByKeywords(words, points)
+        for _, kw in ipairs(words) do
+            if text:find(kw, 1, true) then
+                score = score + points
+            end
+        end
+    end
+
+    addByKeywords(_PriorityKeywords.medium, 1)
+    addByKeywords(_PriorityKeywords.high, 2)
+    addByKeywords(_PriorityKeywords.critical, 4)
+
+    if tonumber(targetId) and tonumber(targetId) > 0 then
+        score = score + 1
+    end
+    if #text >= 180 then
+        score = score + 1
+    end
+
+    if score >= 7 then return 'critical' end
+    if score >= 4 then return 'high' end
+    if score >= 2 then return 'medium' end
+    return 'low'
+end
+
+local function _BuildRunbook(report)
+    local priority = _NormalizePriority(report and report.priority)
+    local steps = _DefaultRunbooks[priority] or _DefaultRunbooks.medium
+
+    local out = {}
+    for i = 1, #steps do
+        out[i] = {
+            order = i,
+            id = steps[i].id,
+            title = steps[i].title,
+            description = steps[i].description
+        }
+    end
+
+    return {
+        version = 1,
+        priority = priority,
+        reportId = report and tonumber(report.id) or nil,
+        steps = out
+    }
+end
+
+local function _GetResponseTemplates()
+    local templates = {}
+    local src = Config and Config.ResponseTemplates or nil
+    if type(src) == 'table' then
+        for i = 1, #src do
+            local t = src[i]
+            if type(t) == 'table' then
+                local id = _SanitizeText(t.id or '', 32):lower()
+                local text = _SanitizeText(t.text or '', 240)
+                if id ~= '' and text ~= '' then
+                    templates[#templates + 1] = { id = id, text = text }
+                end
+            end
+        end
+    end
+    if #templates == 0 then
+        templates = {
+            { id = 'investigating', text = 'Estamos revisando tu reporte.' },
+            { id = 'resolved', text = 'Tu reporte fue resuelto. Gracias por reportar.' },
+            { id = 'need_evidence', text = 'Necesitamos mas evidencia para continuar.' }
+        }
+    end
+    return templates
+end
+
 -- 
 -- REPORT MANAGEMENT
 -- 
@@ -169,13 +307,14 @@ function ReportSystem.CreateReport(reporterSource, targetId, reason)
 
         ReportCooldowns[reporterSource] = now
 
+        local autoPriority = _AutoPriorityFromReason(reason, targetId)
         local report = {
             reporter_id = reporterLicense or 'unknown',
             reporter_name = reporterName,
             reported_id = targetLicense,
             reported_name = targetName,
             reason = reason,
-            priority = 'medium',
+            priority = autoPriority,
             status = 'open'
         }
 
@@ -304,12 +443,76 @@ function ReportSystem.GetPendingReports()
     -- Deprecated: prefer ESX callbacks in server/main.lua (DB-backed UI).
     -- Kept for compatibility with older clients. This returns a minimal list from DB.
     local rows = MySQL.Sync.fetchAll([[
-        SELECT * FROM lyxpanel_reports
+        SELECT *,
+        (
+            CASE priority
+                WHEN 'critical' THEN 400
+                WHEN 'high' THEN 300
+                WHEN 'medium' THEN 200
+                ELSE 100
+            END
+            + CASE status WHEN 'open' THEN 35 ELSE 0 END
+            + LEAST(TIMESTAMPDIFF(MINUTE, created_at, UTC_TIMESTAMP()), 180)
+        ) AS risk_score
+        FROM lyxpanel_reports
         WHERE status IN ('open','in_progress')
-        ORDER BY created_at DESC
+        ORDER BY risk_score DESC, created_at ASC
         LIMIT 100
     ]], {})
     return rows or {}
+end
+
+--- Get prioritized report queue with risk score
+---@param limit number|nil
+---@return table
+function ReportSystem.GetReportQueue(limit)
+    limit = tonumber(limit) or 100
+    if limit < 1 then limit = 1 end
+    if limit > 300 then limit = 300 end
+
+    local rows = MySQL.Sync.fetchAll([[
+        SELECT *,
+        (
+            CASE priority
+                WHEN 'critical' THEN 400
+                WHEN 'high' THEN 300
+                WHEN 'medium' THEN 200
+                ELSE 100
+            END
+            + CASE status WHEN 'open' THEN 35 ELSE 0 END
+            + LEAST(TIMESTAMPDIFF(MINUTE, created_at, UTC_TIMESTAMP()), 180)
+        ) AS risk_score
+        FROM lyxpanel_reports
+        WHERE status IN ('open','in_progress')
+        ORDER BY risk_score DESC, created_at ASC
+        LIMIT ?
+    ]], { limit })
+
+    return rows or {}
+end
+
+--- Build moderation runbook for a report id
+---@param reportId number
+---@return table|nil
+function ReportSystem.GetRunbook(reportId)
+    reportId = tonumber(reportId)
+    if not reportId or reportId <= 0 then
+        return nil
+    end
+
+    local rows = MySQL.Sync.fetchAll('SELECT id, priority, status, reason FROM lyxpanel_reports WHERE id = ? LIMIT 1', { reportId })
+    local report = rows and rows[1]
+    if not report then
+        return nil
+    end
+
+    return _BuildRunbook(report)
+end
+
+--- Get moderation templates for UI/actions
+---@return table
+function ReportSystem.GetTemplates()
+    return _GetResponseTemplates()
 end
 
 --- Notify all admins about a new report
@@ -479,15 +682,100 @@ AddEventHandler('lyxpanel:reports:get', function()
     local source = source
     if not _IsAdminForReports(source) then return end
     if _IsRateLimited(source, 'reports_get', _GetCooldownMs('reportsGet', 1500)) then return end
-    local reports = ReportSystem.GetPendingReports()
+    local reports = ReportSystem.GetReportQueue(100)
     TriggerClientEvent('lyxpanel:reports:list', source, reports or {})
+end)
+
+local function _RegisterEsxCallbacks(esx)
+    if not esx then return end
+
+    esx.RegisterServerCallback('lyxpanel:reports:getQueue', function(source, cb, limit)
+        if not _IsAdminForReports(source) then
+            return cb({ success = false, error = 'no_permission' })
+        end
+        if _IsRateLimited(source, 'reports_queue_cb', _GetCooldownMs('reportsGet', 1500)) then
+            return cb({ success = false, error = 'rate_limited' })
+        end
+        cb({ success = true, rows = ReportSystem.GetReportQueue(limit or 100) })
+    end)
+
+    esx.RegisterServerCallback('lyxpanel:reports:getRunbook', function(source, cb, reportId)
+        if not _IsAdminForReports(source) then
+            return cb({ success = false, error = 'no_permission' })
+        end
+        local runbook = ReportSystem.GetRunbook(reportId)
+        if not runbook then
+            return cb({ success = false, error = 'report_not_found' })
+        end
+        cb({ success = true, runbook = runbook })
+    end)
+
+    esx.RegisterServerCallback('lyxpanel:reports:getTemplates', function(source, cb)
+        if not _IsAdminForReports(source) then
+            return cb({ success = false, error = 'no_permission' })
+        end
+        cb({ success = true, templates = ReportSystem.GetTemplates() })
+    end)
+end
+
+-- Auto-escalate stale open reports according to Config.ReportPriority.autoEscalate
+CreateThread(function()
+    while true do
+        Wait(60000)
+
+        local cfg = Config and Config.ReportPriority or nil
+        local auto = cfg and cfg.autoEscalate or nil
+        if not auto or auto.enabled ~= true then
+            goto continue
+        end
+
+        local minutes = tonumber(auto.minutes) or 10
+        if minutes < 1 then minutes = 1 end
+        if minutes > 720 then minutes = 720 end
+
+        local escalateTo = _NormalizePriority(auto.escalateTo or 'high')
+        local toRank = _PriorityRank[escalateTo] or _PriorityRank.high
+
+        local eligible = {}
+        for p, rank in pairs(_PriorityRank) do
+            if rank < toRank then
+                eligible[#eligible + 1] = ("'%s'"):format(p)
+            end
+        end
+        if #eligible == 0 then
+            goto continue
+        end
+
+        local sql = ([[UPDATE lyxpanel_reports
+            SET priority = ?
+            WHERE status = 'open'
+              AND priority IN (%s)
+              AND created_at <= DATE_SUB(UTC_TIMESTAMP(), INTERVAL ? MINUTE)]]):format(table.concat(eligible, ','))
+
+        MySQL.update(sql, { escalateTo, minutes }, function(affected)
+            if affected and affected > 0 and Config and Config.Debug then
+                print(('[LyxPanel][Reports] Auto-escalated %d report(s) to %s'):format(affected, escalateTo))
+            end
+        end)
+
+        ::continue::
+    end
 end)
 
 -- Initialize on start
 CreateThread(function()
+    local esx = ESX
+    if not esx and LyxPanel and LyxPanel.WaitForESX then
+        esx = LyxPanel.WaitForESX(15000)
+    end
+    _RegisterEsxCallbacks(esx)
+
     Wait(2000)
     ReportSystem.Init()
 end)
+
+LyxPanel = LyxPanel or {}
+LyxPanel.ReportSystem = ReportSystem
 
 return ReportSystem
 

@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>LyxPanel v3.0 - Ultra Premium Admin</title>
+    <title>LyxPanel - Admin Panel</title>
     <link rel="stylesheet" href="css/style.css" />
     <link
       rel="stylesheet"
@@ -46,6 +46,9 @@
           </button>
           <button class="nav-item" data-page="reports">
             <i class="fas fa-flag"></i><span>Reportes</span>
+          </button>
+          <button class="nav-item" data-page="tickets">
+            <i class="fas fa-headset"></i><span>Tickets</span>
           </button>
           <button class="nav-item" data-page="bans">
             <i class="fas fa-ban"></i><span>Bans</span>
@@ -196,6 +199,9 @@
               <button class="action-btn" onclick="teleportMarker()">
                 <i class="fas fa-map-marker"></i><span>TP Marker</span>
               </button>
+              <button class="action-btn" onclick="teleportBack()">
+                <i class="fas fa-rotate-left"></i><span>TP Volver</span>
+              </button>
               <button class="action-btn" onclick="deleteMyVehicle()">
                 <i class="fas fa-trash-alt"></i><span>Borrar Veh</span>
               </button>
@@ -279,6 +285,112 @@
               <button class="action-btn" onclick="reviveAllPlayers()">
                 <i class="fas fa-heartbeat"></i><span>Revivir All</span>
               </button>
+              <button class="action-btn" onclick="reviveRadiusPrompt()">
+                <i class="fas fa-circle-radiation"></i><span>Revive Radio</span>
+              </button>
+              <button class="action-btn" onclick="screenshotBatchPrompt()">
+                <i class="fas fa-images"></i><span>Screenshot Lote</span>
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <!-- Tickets -->
+        <section id="page-tickets" class="page">
+          <div class="page-header">
+            <h1><i class="fas fa-headset"></i> Tickets</h1>
+            <div class="btn-row">
+              <button class="btn btn-secondary btn-sm" onclick="if(window.ticketsReset){ticketsReset();}">
+                <i class="fas fa-rotate-left"></i> Reset
+              </button>
+              <button class="btn btn-primary" onclick="if(window.loadTickets){loadTickets(true);}">
+                <i class="fas fa-sync-alt"></i> Actualizar
+              </button>
+            </div>
+          </div>
+
+          <div class="tickets-layout">
+            <div class="table-container">
+              <div class="tickets-toolbar">
+                <div class="tickets-filters">
+                  <select id="ticketStatus" class="input-third">
+                    <option value="">Todos</option>
+                    <option value="open">Abiertos</option>
+                    <option value="answered">Respondidos</option>
+                    <option value="closed">Cerrados</option>
+                  </select>
+                  <input id="ticketSearch" class="input-full" placeholder="Buscar por jugador/asunto/mensaje" />
+                </div>
+                <div class="tickets-pager">
+                  <select id="ticketLimit" class="input-third">
+                    <option value="25">25</option>
+                    <option value="50" selected>50</option>
+                    <option value="100">100</option>
+                  </select>
+                  <button class="btn btn-secondary btn-sm" onclick="if(window.ticketsPrev){ticketsPrev();}">
+                    <i class="fas fa-chevron-left"></i>
+                  </button>
+                  <button class="btn btn-secondary btn-sm" onclick="if(window.ticketsNext){ticketsNext();}">
+                    <i class="fas fa-chevron-right"></i>
+                  </button>
+                  <span class="tickets-pageinfo" id="ticketPageInfo">0-0 / 0</span>
+                </div>
+              </div>
+
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Jugador</th>
+                    <th>Asunto</th>
+                    <th>Estado</th>
+                    <th>Asignado</th>
+                    <th>Fecha</th>
+                  </tr>
+                </thead>
+                <tbody id="ticketsTableBody"></tbody>
+              </table>
+            </div>
+
+            <div class="ticket-detail">
+              <div class="ticket-detail-header">
+                <div>
+                  <div class="ticket-detail-title" id="ticketDetailTitle">Selecciona un ticket</div>
+                  <div class="ticket-detail-sub" id="ticketDetailSub"></div>
+                </div>
+                <div class="ticket-detail-actions">
+                  <button class="btn btn-secondary btn-sm" onclick="if(window.ticketAssignMe){ticketAssignMe();}">
+                    <i class="fas fa-user-check"></i> Asignarme
+                  </button>
+                  <button class="btn btn-secondary btn-sm" onclick="if(window.ticketReopen){ticketReopen();}">
+                    <i class="fas fa-unlock"></i> Reabrir
+                  </button>
+                  <button class="btn btn-danger btn-sm" onclick="if(window.ticketClose){ticketClose();}">
+                    <i class="fas fa-lock"></i> Cerrar
+                  </button>
+                </div>
+              </div>
+
+              <div class="ticket-detail-body">
+                <div class="ticket-block">
+                  <div class="ticket-block-title">Mensaje</div>
+                  <div class="ticket-block-text" id="ticketDetailMessage">-</div>
+                </div>
+                <div class="ticket-block">
+                  <div class="ticket-block-title">Respuesta staff (historial)</div>
+                  <div class="ticket-block-text mono" id="ticketDetailResponse">-</div>
+                </div>
+
+                <div class="ticket-reply">
+                  <textarea id="ticketReplyText" class="input-full" placeholder="Responder (se guarda en historial)"></textarea>
+                  <div class="btn-row">
+                    <button class="btn btn-primary btn-full" onclick="if(window.ticketReply){ticketReply();}">
+                      <i class="fas fa-paper-plane"></i> Responder
+                    </button>
+                  </div>
+                  <input id="ticketCloseReason" class="input-full" placeholder="Motivo al cerrar (opcional)" />
+                </div>
+              </div>
             </div>
           </div>
         </section>

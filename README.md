@@ -19,6 +19,9 @@ Panel de administracion **open source** para FiveM/ESX, enfocado en seguridad se
   - schema validation
   - token + nonce + anti-replay
 - Auditoria avanzada con filtros y export `JSON/CSV`.
+- Tickets de soporte in-game:
+  - jugadores: comando `/ticket`
+  - staff: gestion desde la pestaña **Tickets** (asignar, responder, cerrar, reabrir)
 - Presets de admin:
   - self presets
   - vehicle builds
@@ -52,10 +55,26 @@ Config.OpenKey = 'F7'
 ```
 - Seguridad:
 ```lua
-Config.EventFirewall = {
-  enabled = true
-}
+Config.Security.adminEventFirewall.enabled = true
+Config.Security.adminEventFirewall.requireActiveSession = true
+
+-- En entorno hostil, cerrar mas:
+Config.RuntimeProfile = 'hostile'
+Config.Security.adminEventFirewall.sessionStateFailOpen = false
 ```
+
+## Tickets (soporte)
+Jugadores:
+- Crear ticket: `/ticket asunto | mensaje` (o `/ticket mensaje`)
+
+Staff (panel -> Tickets):
+- Asignar a un admin
+- Responder (se guarda en historial)
+- Cerrar / Reabrir
+
+Permisos recomendados:
+- `canUseTickets`: ver/listar
+- `canManageTickets`: asignar/responder/cerrar
 
 ## Arquitectura
 ```mermaid
@@ -78,6 +97,11 @@ flowchart LR
 - Correlation ID para trazabilidad.
 - Export paginado desde la UI para revisiones.
 
+## QA offline (recomendado antes de release)
+```bash
+node tools/qa/check_events.js
+```
+
 ## Si queres aportar
 Toda contribucion suma. Para mantener calidad:
 1. Crear rama por feature/fix.
@@ -89,8 +113,8 @@ Ver:
 - `CONTRIBUTING.md`
 - `SECURITY.md`
 
-## Roadmap y contexto
-- Roadmap conversacional principal: `../README_ROADMAP_CONVERSACION.md`
+## Roadmap
+- Usar Issues/PRs del repo para el backlog y el progreso.
 
 ## Checklist de release recomendado
 - Migraciones OK

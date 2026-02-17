@@ -36,6 +36,7 @@ end
 local SpectateSessions = {}
 
 local _ActionCooldowns = {}
+local _TeleportBackHistory = {}
 
 local function _IsRateLimited(src, key, cooldownMs)
     if not src or src <= 0 then return true end
@@ -84,6 +85,143 @@ local function _GetGuardSafeMs(key, fallback)
     end
     return fallback
 end
+
+local function _GetTeleportBackCfg()
+    local limits = Config and Config.ActionLimits or nil
+    local cfg = limits and limits.teleportBack
+    local out = {
+        ttlMs = 10 * 60 * 1000,
+        maxEntries = 12,
+        minDistance = 1.5
+    }
+
+    if type(cfg) == 'table' then
+        local ttl = tonumber(cfg.ttlMs)
+        local maxEntries = tonumber(cfg.maxEntries)
+        local minDistance = tonumber(cfg.minDistance)
+
+        if ttl and ttl > 1000 then
+            out.ttlMs = math.floor(ttl)
+        end
+        if maxEntries and maxEntries >= 1 then
+            out.maxEntries = math.floor(maxEntries)
+        end
+        if minDistance and minDistance >= 0.0 then
+            out.minDistance = minDistance
+        end
+    end
+
+    return out
+end
+
+local function _VecDistance(a, b)
+    local dx = (a.x or 0.0) - (b.x or 0.0)
+    local dy = (a.y or 0.0) - (b.y or 0.0)
+    local dz = (a.z or 0.0) - (b.z or 0.0)
+    return math.sqrt((dx * dx) + (dy * dy) + (dz * dz))
+end
+
+local function _PruneTeleportBackHistory(src, nowMs)
+    local list = _TeleportBackHistory[src]
+    if type(list) ~= 'table' then
+        return
+    end
+
+    local cfg = _GetTeleportBackCfg()
+    local ttlMs = cfg.ttlMs
+    local now = nowMs or GetGameTimer()
+
+    local i = 1
+    while i <= #list do
+        local row = list[i]
+        local ts = row and tonumber(row.ts) or 0
+        if (now - ts) > ttlMs then
+            table.remove(list, i)
+        else
+            i = i + 1
+        end
+    end
+
+    if #list <= 0 then
+        _TeleportBackHistory[src] = nil
+    end
+end
+
+local function _PushTeleportBackPosition(src, reason, coords)
+    if not src or src <= 0 or not GetPlayerName(src) then
+        return false
+    end
+
+    local c = coords
+    if type(c) ~= 'table' then
+        local ped = GetPlayerPed(src)
+        if not ped or ped == 0 then
+            return false
+        end
+        c = GetEntityCoords(ped)
+    end
+
+    local x = tonumber(c and c.x)
+    local y = tonumber(c and c.y)
+    local z = tonumber(c and c.z)
+    if not x or not y or not z then
+        return false
+    end
+
+    local now = GetGameTimer()
+    _PruneTeleportBackHistory(src, now)
+
+    local cfg = _GetTeleportBackCfg()
+    local list = _TeleportBackHistory[src] or {}
+    local last = list[#list]
+    local asVec = { x = x, y = y, z = z }
+    if type(last) == 'table' then
+        local lastVec = { x = tonumber(last.x) or 0.0, y = tonumber(last.y) or 0.0, z = tonumber(last.z) or 0.0 }
+        if _VecDistance(asVec, lastVec) < cfg.minDistance then
+            return true
+        end
+    end
+
+    list[#list + 1] = {
+        x = x,
+        y = y,
+        z = z,
+        reason = tostring(reason or 'teleport'),
+        ts = now
+    }
+
+    local maxEntries = cfg.maxEntries
+    while #list > maxEntries do
+        table.remove(list, 1)
+    end
+
+    _TeleportBackHistory[src] = list
+    return true
+end
+
+local function _PopTeleportBackPosition(src)
+    local list = _TeleportBackHistory[src]
+    if type(list) ~= 'table' or #list <= 0 then
+        return nil
+    end
+
+    _PruneTeleportBackHistory(src, GetGameTimer())
+    list = _TeleportBackHistory[src]
+    if type(list) ~= 'table' or #list <= 0 then
+        return nil
+    end
+
+    local entry = list[#list]
+    list[#list] = nil
+    if #list <= 0 then
+        _TeleportBackHistory[src] = nil
+    end
+    return entry, #list
+end
+
+LyxPanel = LyxPanel or {}
+LyxPanel.PushTeleportBackPosition = _PushTeleportBackPosition
+LyxPanel.PopTeleportBackPosition = _PopTeleportBackPosition
 
 local function _AsInt(v, default)
     local n = tonumber(v)
@@ -216,6 +354,224 @@ local function _TryGuardSafe(targetId, types, durationMs)
     return ok == true
 end
 
+local _DangerApprovals = {
+    nextId = 0,
+    byId = {},        -- [id] = request
+    byActionKey = {}  -- [actionKey] = id
+}
+
+local function _GetDangerCfg()
+    local cfg = Config and Config.Permissions and Config.Permissions.dangerousActions or nil
+    if type(cfg) ~= 'table' then
+        return nil
+    end
+    return cfg
+end
+
+local function _ArrayContainsString(list, value)
+    if type(list) ~= 'table' then return false end
+    value = tostring(value or ''):lower()
+    for i = 1, #list do
+        if tostring(list[i] or ''):lower() == value then
+            return true
+        end
+    end
+    return false
+end
+
+local function _NormalizeDangerText(value, maxLen)
+    local s = tostring(value or ''):lower()
+    s = s:gsub('[%c]', ' '):gsub('%s+', ' ')
+    s = s:match('^%s*(.-)%s*$') or s
+    if maxLen and #s > maxLen then
+        s = s:sub(1, maxLen)
+    end
+    return s
+end
+
+local function _GetCurrentHour(useUtc)
+    local fmt = useUtc and '!%H' or '%H'
+    local h = tonumber(os.date(fmt))
+    if not h then return 0 end
+    if h < 0 then h = 0 end
+    if h > 23 then h = 23 end
+    return h
+end
+
+local function _IsInsideDangerWindow(cfg)
+    if type(cfg) ~= 'table' then return true end
+    local wnd = cfg.allowedWindow
+    if type(wnd) ~= 'table' or wnd.enabled ~= true then
+        return true
+    end
+
+    local startHour = _ClampInt(wnd.startHour, 0, 23, 0)
+    local endHour = _ClampInt(wnd.endHour, 0, 23, 23)
+    local hour = _GetCurrentHour(wnd.useUtc == true)
+
+    if startHour <= endHour then
+        return hour >= startHour and hour <= endHour
+    end
+    return hour >= startHour or hour <= endHour
+end
+
+local function _GetDangerActionKey(actionName, targetId, reason)
+    return table.concat({
+        _NormalizeDangerText(actionName, 48),
+        tostring(tonumber(targetId) or -1),
+        _NormalizeDangerText(reason, 96)
+    }, '|')
+end
+
+local function _PruneDangerApprovals(nowMs)
+    nowMs = nowMs or GetGameTimer()
+    for id, req in pairs(_DangerApprovals.byId) do
+        if type(req) ~= 'table' or (tonumber(req.expiresAtMs) or 0) <= nowMs then
+            if req and req.actionKey then
+                _DangerApprovals.byActionKey[req.actionKey] = nil
+            end
+            _DangerApprovals.byId[id] = nil
+        end
+    end
+end
+
+local function _CreateDangerApprovalRequest(source, actionName, targetId, reason)
+    local cfg = _GetDangerCfg() or {}
+    local ttlSec = _ClampInt(cfg.approvalTtlSeconds, 15, 600, 120)
+
+    _DangerApprovals.nextId = (_DangerApprovals.nextId or 0) + 1
+    local id = _DangerApprovals.nextId
+    local nowMs = GetGameTimer()
+    local actionKey = _GetDangerActionKey(actionName, targetId, reason)
+    local req = {
+        id = id,
+        requester = source,
+        requesterName = GetPlayerName(source) or ('src:' .. tostring(source)),
+        actionName = tostring(actionName or 'unknown'),
+        targetId = tonumber(targetId) or -1,
+        reason = _NormalizeDangerText(reason, 200),
+        actionKey = actionKey,
+        createdAtMs = nowMs,
+        expiresAtMs = nowMs + (ttlSec * 1000),
+        approvedBy = nil,
+        approvedByName = nil,
+        approvedAtMs = nil
+    }
+
+    _DangerApprovals.byId[id] = req
+    _DangerApprovals.byActionKey[actionKey] = id
+    return req
+end
+
+local function _GetDangerApprovalForAction(actionName, targetId, reason)
+    _PruneDangerApprovals(GetGameTimer())
+    local key = _GetDangerActionKey(actionName, targetId, reason)
+    local id = _DangerApprovals.byActionKey[key]
+    local req = id and _DangerApprovals.byId[id] or nil
+    return req, key
+end
+
+local function _NotifyDangerApprovalNeeded(source, req)
+    if not req then return end
+
+    local action = tostring(req.actionName or 'accion')
+    local msg = ('Accion peligrosa pendiente (%s). ID aprobacion: %d'):format(action, req.id)
+    TriggerClientEvent('lyxpanel:notify', source, 'warning', msg)
+
+    local cfg = _GetDangerCfg() or {}
+    if cfg.notifyAllAdmins ~= true then
+        return
+    end
+
+    for _, p in ipairs(GetPlayers()) do
+        local pid = tonumber(p)
+        if pid and pid ~= source and GetPlayerName(pid) then
+            local canApprove = (HasPermission(pid, 'canBan') or HasPermission(pid, 'canWipePlayer'))
+            if canApprove then
+                TriggerClientEvent('lyxpanel:notify', pid, 'info',
+                    ('%s solicita aprobacion de %s (ID %d)'):format(req.requesterName or 'Admin', action, req.id))
+            end
+        end
+    end
+end
+
+local function _ConsumeDangerApproval(req)
+    if not req or not req.id then return end
+    if req.actionKey then
+        _DangerApprovals.byActionKey[req.actionKey] = nil
+    end
+    _DangerApprovals.byId[req.id] = nil
+end
+
+local function _GuardDangerAction(source, actionName, targetId, reason)
+    local cfg = _GetDangerCfg()
+    if not cfg then return true end
+
+    if not _IsInsideDangerWindow(cfg) then
+        TriggerClientEvent('lyxpanel:notify', source, 'error',
+            'Accion bloqueada por ventana horaria de seguridad')
+        return false
+    end
+
+    local mustDouble = _ArrayContainsString(cfg.requireDoubleConfirm, actionName)
+    if not mustDouble then
+        return true
+    end
+
+    if cfg.enforceSecondAdmin ~= true then
+        return true
+    end
+
+    local req = _GetDangerApprovalForAction(actionName, targetId, reason)
+    if req and req.requester == source and req.approvedBy and req.approvedBy ~= source then
+        _ConsumeDangerApproval(req)
+        return true
+    end
+
+    if not req then
+        req = _CreateDangerApprovalRequest(source, actionName, targetId, reason)
+    end
+    _NotifyDangerApprovalNeeded(source, req)
+    return false
+end
+
+local function _ApproveDangerRequest(source, requestId)
+    requestId = tonumber(requestId)
+    if not requestId then
+        return false, 'request_id_invalido'
+    end
+
+    _PruneDangerApprovals(GetGameTimer())
+    local req = _DangerApprovals.byId[requestId]
+    if not req then
+        return false, 'request_no_encontrado_o_expirado'
+    end
+
+    if req.requester == source then
+        return false, 'el_mismo_admin_no_puede_aprobar'
+    end
+
+    local canApprove = (HasPermission(source, 'canBan') or HasPermission(source, 'canWipePlayer'))
+    if not canApprove then
+        return false, 'sin_permiso_para_aprobar'
+    end
+
+    req.approvedBy = source
+    req.approvedByName = GetPlayerName(source) or ('src:' .. tostring(source))
+    req.approvedAtMs = GetGameTimer()
+    _DangerApprovals.byId[requestId] = req
+
+    if req.requester and GetPlayerName(req.requester) then
+        TriggerClientEvent('lyxpanel:notify', req.requester, 'success',
+            ('Accion %s aprobada por %s. Repite la accion para ejecutar.'):format(
+                tostring(req.actionName or 'peligrosa'),
+                tostring(req.approvedByName or 'staff')
+            ))
+    end
+
+    return true, 'ok'
+end
+
 local function StopSpectateSession(src)
     local session = SpectateSessions[src]
     if not session then return end
@@ -243,6 +599,9 @@ AddEventHandler('playerDropped', function()
     if _ActionCooldowns[src] then
         _ActionCooldowns[src] = nil
     end
+    if _TeleportBackHistory[src] then
+        _TeleportBackHistory[src] = nil
+    end
 
     for staffSrc, session in pairs(SpectateSessions) do
         if session and session.targetId == src then
@@ -250,7 +609,47 @@ AddEventHandler('playerDropped', function()
             StopSpectateSession(staffSrc)
         end
     end
+
+    -- Cleanup pending dual-approval requests related to disconnected source.
+    _PruneDangerApprovals(GetGameTimer())
+    for id, req in pairs(_DangerApprovals.byId) do
+        if req and (req.requester == src or req.approvedBy == src) then
+            if req.actionKey then
+                _DangerApprovals.byActionKey[req.actionKey] = nil
+            end
+            _DangerApprovals.byId[id] = nil
+        end
+    end
 end)
+
+RegisterNetEvent('lyxpanel:danger:approve', function(requestId)
+    local s = source
+    if not HasPanelAccess(s) then return end
+    local ok, code = _ApproveDangerRequest(s, requestId)
+    if not ok then
+        TriggerClientEvent('lyxpanel:notify', s, 'error', 'No se pudo aprobar: ' .. tostring(code))
+        return
+    end
+    TriggerClientEvent('lyxpanel:notify', s, 'success', 'Aprobacion registrada')
+end)
+
+RegisterCommand('lyxapprove', function(source, args)
+    if source == 0 then
+        print('[LyxPanel] /lyxapprove solo puede ejecutarse in-game por staff.')
+        return
+    end
+    if not HasPanelAccess(source) then
+        return
+    end
+
+    local reqId = tonumber(args and args[1])
+    local ok, code = _ApproveDangerRequest(source, reqId)
+    if not ok then
+        TriggerClientEvent('lyxpanel:notify', source, 'error', 'No se pudo aprobar: ' .. tostring(code))
+        return
+    end
+    TriggerClientEvent('lyxpanel:notify', source, 'success', 'Aprobacion registrada')
+end, false)
 
 -- 
 -- ACCIONES BSICAS
@@ -939,6 +1338,29 @@ RegisterNetEvent('lyxpanel:action:spawnVehicle', function(targetId, model)
     TriggerClientEvent('lyxpanel:notify', s, 'success', 'Vehiculo: ' .. model)
 end)
 
+-- Quick flow: spawn + warp + full tune (single action for faster moderation workflows).
+RegisterNetEvent('lyxpanel:action:quickSpawnWarpTune', function(targetId, model)
+    local s = source
+    if not HasPermission(s, 'canSpawnVehicles') then return end
+    if _IsRateLimited(s, 'quickSpawnWarpTune', _GetCooldownMs('quickSpawnWarpTune', 1500)) then return end
+
+    local target = _AsTargetPlayer(s, targetId)
+    if not target then return end
+
+    model = _NormalizeVehicleModel(model)
+    if not model then
+        TriggerClientEvent('lyxpanel:notify', s, 'error', 'Modelo de vehiculo invalido')
+        return
+    end
+
+    _TryGuardSafe(target, { 'entity' }, _GetGuardSafeMs('entity', 7000))
+    TriggerClientEvent('lyxpanel:quickSpawnWarpTune', target, model)
+
+    LogAction(GetId(s, 'license'), GetPlayerName(s), 'QUICK_SPAWN_WARP_TUNE',
+        GetId(target, 'license'), GetPlayerName(target), { model = model })
+    TriggerClientEvent('lyxpanel:notify', s, 'success', 'Flujo rapido ejecutado: ' .. model)
+end)
+
 RegisterNetEvent('lyxpanel:action:deleteVehicle', function(targetId)
     local s = source
     if not HasPermission(s, 'canDeleteVehicle') then return end
@@ -1111,6 +1533,7 @@ RegisterNetEvent('lyxpanel:action:teleportTo', function(targetId)
     if ped and ped ~= 0 then
         local c = GetEntityCoords(ped)
         if c then
+            _PushTeleportBackPosition(s, 'teleportTo')
             _TryGuardSafe(s, { 'movement', 'teleport' }, _GetGuardSafeMs('movement', 5000))
             TriggerClientEvent('lyxpanel:teleport', s, c.x, c.y, c.z)
             TriggerClientEvent('lyxpanel:notify', s, 'success',
@@ -1168,6 +1591,7 @@ RegisterNetEvent('lyxpanel:action:teleportCoords', function(x, y, z)
         return
     end
 
+    _PushTeleportBackPosition(s, 'teleportCoords')
     _TryGuardSafe(s, { 'movement', 'teleport' }, _GetGuardSafeMs('movement', 5000))
     TriggerClientEvent('lyxpanel:teleport', s, x, y, z)
     LogAction(GetId(s, 'license'), GetPlayerName(s), 'TP_COORDS', GetId(s, 'license'), GetPlayerName(s), { x = x, y = y, z = z })
@@ -1177,8 +1601,43 @@ RegisterNetEvent('lyxpanel:action:teleportMarker', function()
     local s = source
     if not HasPermission(s, 'canTeleport') then return end
     if _IsRateLimited(s, 'teleportMarker', _GetCooldownMs('teleportMarker', 750)) then return end
+    _PushTeleportBackPosition(s, 'teleportMarker')
     TriggerClientEvent('lyxpanel:teleportMarker', s)
     LogAction(GetId(s, 'license'), GetPlayerName(s), 'TP_MARKER', GetId(s, 'license'), GetPlayerName(s), {})
+end)
+
+RegisterNetEvent('lyxpanel:action:teleportBack', function()
+    local s = source
+    if not HasPermission(s, 'canTeleport') then return end
+    if _IsRateLimited(s, 'teleportBack', _GetCooldownMs('teleportBack', 750)) then return end
+
+    local entry, left = _PopTeleportBackPosition(s)
+    if not entry then
+        TriggerClientEvent('lyxpanel:notify', s, 'warning', 'No hay posicion previa guardada')
+        return
+    end
+
+    local x = tonumber(entry.x)
+    local y = tonumber(entry.y)
+    local z = tonumber(entry.z)
+    if not x or not y or not z then
+        TriggerClientEvent('lyxpanel:notify', s, 'error', 'Posicion previa invalida')
+        return
+    end
+
+    _TryGuardSafe(s, { 'movement', 'teleport' }, _GetGuardSafeMs('movement', 5000))
+    TriggerClientEvent('lyxpanel:teleport', s, x, y, z)
+
+    LogAction(GetId(s, 'license'), GetPlayerName(s), 'TELEPORT_BACK', GetId(s, 'license'), GetPlayerName(s), {
+        x = x,
+        y = y,
+        z = z,
+        reason = tostring(entry.reason or 'teleport'),
+        ageMs = math.max(0, GetGameTimer() - (tonumber(entry.ts) or 0)),
+        stackLeft = tonumber(left) or 0
+    })
+
+    TriggerClientEvent('lyxpanel:notify', s, 'success', 'Volviste a la posicion anterior')
 end)
 
 -- SALUD (heal is already defined above at line 289)
@@ -1712,6 +2171,86 @@ RegisterNetEvent('lyxpanel:action:screenshot', function(targetId)
         end)
 end)
 
+RegisterNetEvent('lyxpanel:action:screenshotBatch', function(targetIds)
+    local s = source
+    if not HasPermission(s, 'canScreenshot') then return end
+    if _IsRateLimited(s, 'screenshotBatch', _GetCooldownMs('screenshotBatch', 12000)) then return end
+
+    if GetResourceState('screenshot-basic') ~= 'started' or not exports['screenshot-basic'] then
+        TriggerClientEvent('lyxpanel:notify', s, 'error', 'screenshot-basic no esta instalado/iniciado (funcion desactivada)')
+        return
+    end
+
+    if type(targetIds) ~= 'table' then
+        TriggerClientEvent('lyxpanel:notify', s, 'error', 'Lista de targets invalida')
+        return
+    end
+
+    local maxTargets = _GetLimitNumber('maxScreenshotBatchTargets', 12)
+    if maxTargets < 1 then maxTargets = 1 end
+    if maxTargets > 32 then maxTargets = 32 end
+
+    local unique = {}
+    local ids = {}
+    for i = 1, #targetIds do
+        local pid = tonumber(targetIds[i])
+        if pid and pid > 0 and GetPlayerName(pid) and not unique[pid] then
+            unique[pid] = true
+            ids[#ids + 1] = pid
+            if #ids >= maxTargets then
+                break
+            end
+        end
+    end
+
+    if #ids <= 0 then
+        TriggerClientEvent('lyxpanel:notify', s, 'warning', 'No hay jugadores validos para capturar')
+        return
+    end
+
+    local pending = #ids
+    local okCount = 0
+    local failCount = 0
+    local perTarget = {}
+
+    TriggerClientEvent('lyxpanel:notify', s, 'info',
+        ('Iniciando capturas en lote (%d objetivos)...'):format(#ids))
+
+    for i = 1, #ids do
+        local pid = ids[i]
+        exports['screenshot-basic']:requestClientScreenshot(pid, { encoding = 'png', quality = 0.8 }, function(err, _data)
+            pending = pending - 1
+            local row = {
+                targetId = pid,
+                targetName = GetPlayerName(pid) or ('id:' .. tostring(pid)),
+                ok = (err == nil)
+            }
+
+            if err then
+                failCount = failCount + 1
+                row.error = tostring(err)
+            else
+                okCount = okCount + 1
+            end
+
+            perTarget[#perTarget + 1] = row
+
+            if pending <= 0 then
+                LogAction(GetId(s, 'license'), GetPlayerName(s), 'SCREENSHOT_BATCH', '', '', {
+                    total = #ids,
+                    ok = okCount,
+                    failed = failCount,
+                    targets = perTarget
+                })
+
+                local level = (failCount > 0 and okCount > 0) and 'warning' or ((failCount > 0) and 'error' or 'success')
+                TriggerClientEvent('lyxpanel:notify', s, level,
+                    ('Capturas finalizadas: ok=%d | fallidas=%d'):format(okCount, failCount))
+            end
+        end)
+    end
+end)
+
 -- 
 -- FUNCIONES DE TROLLEO (12 NUEVAS)
 -- 
@@ -2079,6 +2618,10 @@ RegisterNetEvent('lyxpanel:action:clearAllDetections', function(reason, dryRun)
         return
     end
 
+    if not _GuardDangerAction(s, 'clearAllDetections', -1, reason) then
+        return
+    end
+
     if not (LyxPanel and LyxPanel.IsLyxGuardAvailable and LyxPanel.IsLyxGuardAvailable()) then
         TriggerClientEvent('lyxpanel:notify', s, 'error', 'lyx-guard no esta activo')
         return
@@ -2114,6 +2657,10 @@ RegisterNetEvent('lyxpanel:action:clearLogs', function(reason, dryRun)
     reason = reason:match('^%s*(.-)%s*$') or reason
     if reason == '' then
         TriggerClientEvent('lyxpanel:notify', s, 'error', 'Motivo obligatorio')
+        return
+    end
+
+    if not _GuardDangerAction(s, 'clearLogs', -1, reason) then
         return
     end
 
@@ -2162,9 +2709,16 @@ RegisterNetEvent('lyxpanel:action:tpToReporter', function(reporterId)
         local reporterPed = GetPlayerPed(reporterSource)
         if reporterPed and DoesEntityExist(reporterPed) then
             local coords = GetEntityCoords(reporterPed)
+            _PushTeleportBackPosition(s, 'tpToReporter')
             _TryGuardSafe(s, { 'movement', 'teleport' }, _GetGuardSafeMs('movement', 5000))
             TriggerClientEvent('lyxpanel:teleport', s, coords.x, coords.y, coords.z)
             TriggerClientEvent('lyxpanel:notify', s, 'success', 'Teleportado al reporter')
+            LogAction(GetId(s, 'license'), GetPlayerName(s), 'TP_REPORTER', GetId(reporterSource, 'license'),
+                GetPlayerName(reporterSource), {
+                    x = coords.x,
+                    y = coords.y,
+                    z = coords.z
+                })
         else
             TriggerClientEvent('lyxpanel:notify', s, 'error', 'No se pudo obtener posicion del reporter')
         end
@@ -2234,6 +2788,86 @@ RegisterNetEvent('lyxpanel:action:sendReportMessage', function(reportId, targetI
         TriggerClientEvent('lyxpanel:notify', s, 'success', 'Mensaje enviado')
         LogAction(GetId(s, 'license'), GetPlayerName(s), 'REPORT_MESSAGE', tostring(reportId), '',
             { reportId = reportId, message = message })
+    end)
+end)
+
+-- Enviar plantilla de reporte (admin -> usuario)
+RegisterNetEvent('lyxpanel:action:sendReportTemplate', function(reportId, targetId, templateId)
+    local s = source
+    if not HasPermission(s, 'canManageReports') then return end
+    if _IsRateLimited(s, 'sendReportTemplate', _GetCooldownMs('sendReportTemplate', 750)) then return end
+
+    reportId = _AsInt(reportId, 0)
+    if reportId <= 0 then
+        TriggerClientEvent('lyxpanel:notify', s, 'error', 'Reporte invalido')
+        return
+    end
+
+    if templateId == nil then
+        TriggerClientEvent('lyxpanel:notify', s, 'error', 'Template invalido')
+        return
+    end
+
+    local templateKey = tostring(templateId):lower():gsub('%s+', '')
+    local templates = (LyxPanel and LyxPanel.ReportSystem and LyxPanel.ReportSystem.GetTemplates and LyxPanel.ReportSystem.GetTemplates()) or {}
+    local templateText = nil
+
+    for i = 1, #templates do
+        local t = templates[i]
+        if type(t) == 'table' then
+            local id = tostring(t.id or ''):lower():gsub('%s+', '')
+            if id == templateKey then
+                templateText = tostring(t.text or '')
+                break
+            end
+        end
+    end
+
+    if not templateText or templateText == '' then
+        TriggerClientEvent('lyxpanel:notify', s, 'error', 'Template no encontrado')
+        return
+    end
+
+    local msgMax = math.max(_GetLimitNumber('maxAnnouncementLength', 250), 500)
+    templateText = (LyxPanelLib and LyxPanelLib.Sanitize and LyxPanelLib.Sanitize(templateText, msgMax)) or
+        tostring(templateText or '')
+    templateText = templateText:match('^%s*(.-)%s*$') or templateText
+    if templateText == '' then
+        TriggerClientEvent('lyxpanel:notify', s, 'error', 'Template vacio')
+        return
+    end
+
+    MySQL.query('SELECT reporter_id FROM lyxpanel_reports WHERE id = ? LIMIT 1', { reportId }, function(result)
+        local reporterId = result and result[1] and result[1].reporter_id or nil
+        if not reporterId or reporterId == '' then
+            TriggerClientEvent('lyxpanel:notify', s, 'error', 'Reporte no encontrado')
+            return
+        end
+
+        MySQL.insert(
+            'INSERT INTO lyxpanel_report_messages (report_id, sender_id, sender_name, message, is_admin) VALUES (?, ?, ?, ?, ?)',
+            { reportId, GetId(s, 'license'), GetPlayerName(s), templateText, 1 })
+
+        targetId = tonumber(targetId)
+        if targetId and targetId > 0 and GetPlayerName(targetId) then
+            TriggerClientEvent('lyxpanel:privateMessage', targetId, GetPlayerName(s), templateText, 'report')
+        end
+
+        for _, playerId in ipairs(GetPlayers()) do
+            local pid = tonumber(playerId)
+            if pid and GetPlayerName(pid) then
+                local playerLicense = GetId(pid, 'license')
+                if playerLicense == reporterId then
+                    TriggerClientEvent('lyxpanel:notify', pid, 'info', 'Respuesta del admin: ' .. templateText)
+                    TriggerClientEvent('lyxpanel:playSound', pid, 'report')
+                    break
+                end
+            end
+        end
+
+        TriggerClientEvent('lyxpanel:notify', s, 'success', 'Template enviado')
+        LogAction(GetId(s, 'license'), GetPlayerName(s), 'REPORT_TEMPLATE',
+            tostring(reportId), '', { reportId = reportId, template_id = templateKey, message = templateText })
     end)
 end)
 
@@ -2466,6 +3100,107 @@ RegisterNetEvent('lyxpanel:action:reviveAll', function(dryRun)
     TriggerClientEvent('lyxpanel:notify', s, 'success', 'Revividos ' .. count .. ' jugadores')
 end)
 
+local function _GetPlayersInRadiusFromSource(sourceId, radius)
+    local out = {}
+    local originPed = GetPlayerPed(sourceId)
+    if not originPed or originPed == 0 then
+        return out
+    end
+
+    local origin = GetEntityCoords(originPed)
+    if not origin then
+        return out
+    end
+
+    local players = {}
+    if ESX and ESX.GetPlayers then
+        players = ESX.GetPlayers()
+    else
+        players = GetPlayers()
+    end
+
+    for _, id in ipairs(players) do
+        local pid = tonumber(id)
+        if pid and pid > 0 and GetPlayerName(pid) then
+            local ped = GetPlayerPed(pid)
+            if ped and ped ~= 0 then
+                local c = GetEntityCoords(ped)
+                if c then
+                    local d = _VecDistance(origin, c)
+                    if d <= radius then
+                        out[#out + 1] = {
+                            id = pid,
+                            name = GetPlayerName(pid),
+                            dist = d
+                        }
+                    end
+                end
+            end
+        end
+    end
+
+    return out
+end
+
+-- Revive players around the admin with strong server validation.
+RegisterNetEvent('lyxpanel:action:reviveRadius', function(radius, dryRun)
+    local s = source
+    if not HasPermission(s, 'canRevive') then return end
+    if _IsRateLimited(s, 'reviveRadius', _GetCooldownMs('reviveRadius', 12000)) then return end
+
+    radius = _AsInt(radius, 25)
+    if radius < 5 then radius = 5 end
+    if radius > 250 then radius = 250 end
+
+    local targets = _GetPlayersInRadiusFromSource(s, radius)
+    local count = #targets
+
+    if dryRun == true then
+        local preview = {}
+        local maxPreview = math.min(count, 10)
+        for i = 1, maxPreview do
+            preview[#preview + 1] = ('%s(%d)'):format(tostring(targets[i].name or '?'), tonumber(targets[i].id) or -1)
+        end
+
+        LogAction(GetId(s, 'license'), GetPlayerName(s), 'REVIVE_RADIUS', '', '', {
+            radius = radius,
+            count = count,
+            dryRun = true,
+            preview = preview
+        })
+        TriggerClientEvent('lyxpanel:notify', s, 'info',
+            ('[DRY-RUN] ReviveRadius: %d jugadores en %dm'):format(count, radius))
+        return
+    end
+
+    if not _GuardDangerAction(s, 'reviveRadius', -1, ('radius=%d'):format(radius)) then
+        return
+    end
+
+    local revived = 0
+    local preview = {}
+    for i = 1, #targets do
+        local row = targets[i]
+        local pid = tonumber(row.id)
+        if pid and GetPlayerName(pid) then
+            _TryGuardSafe(pid, { 'health' }, _GetGuardSafeMs('health', 3000))
+            TriggerClientEvent('esx_ambulancejob:revive', pid)
+            revived = revived + 1
+            if #preview < 20 then
+                preview[#preview + 1] = ('%s(%d)'):format(tostring(row.name or '?'), pid)
+            end
+        end
+    end
+
+    LogAction(GetId(s, 'license'), GetPlayerName(s), 'REVIVE_RADIUS', '', '', {
+        radius = radius,
+        count = revived,
+        preview = preview
+    })
+    TriggerClientEvent('lyxpanel:notify', s, 'success',
+        ('Revividos %d jugadores (radio %dm)'):format(revived, radius))
+end)
+
 -- Give Money All - Give money to all players
 RegisterNetEvent('lyxpanel:action:giveMoneyAll', function(amount, accountType, dryRun)
     local s = source
@@ -2483,6 +3218,10 @@ RegisterNetEvent('lyxpanel:action:giveMoneyAll', function(amount, accountType, d
     accountType = tostring(accountType or 'money')
     if not _IsValidAccount(accountType) then
         TriggerClientEvent('lyxpanel:notify', s, 'error', 'Cuenta invalida')
+        return
+    end
+
+    if not _GuardDangerAction(s, 'giveMoneyAll', -1, ('%s:%d'):format(accountType, amount)) then
         return
     end
 
@@ -2602,6 +3341,10 @@ RegisterNetEvent('lyxpanel:action:wipePlayer', function(targetId, confirmText, r
         return
     end
 
+    if not _GuardDangerAction(s, 'wipePlayer', targetId, reason) then
+        return
+    end
+
     if dryRun == true then
         LogAction(GetId(s, 'license'), GetPlayerName(s), 'WIPE_PLAYER', identifier, targetName,
             { reason = reason, dryRun = true })
@@ -2618,8 +3361,214 @@ RegisterNetEvent('lyxpanel:action:wipePlayer', function(targetId, confirmText, r
     TriggerClientEvent('lyxpanel:notify', s, 'warning', 'Datos del jugador eliminados')
 end)
 
+-- ---------------------------------------------------------------------------
+-- Tickets (support workflow)
+-- ---------------------------------------------------------------------------
+
+RegisterNetEvent('lyxpanel:action:ticketAssign', function(ticketId)
+    local s = source
+    if not HasPermission(s, 'canManageTickets') then return end
+    if _IsRateLimited(s, 'ticketAssign', _GetCooldownMs('ticketAssign', 900)) then return end
+
+    ticketId = tonumber(ticketId)
+    if not ticketId or ticketId <= 0 then
+        TriggerClientEvent('lyxpanel:notify', s, 'error', 'Ticket invalido')
+        return
+    end
+
+    local adminId = GetId(s, 'license')
+    local adminName = GetPlayerName(s) or 'unknown'
+
+    MySQL.update(
+        'UPDATE lyxpanel_tickets SET assigned_to_id = ?, assigned_to_name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status <> \"closed\"',
+        { adminId, adminName, ticketId },
+        function(changed)
+            if tonumber(changed) and tonumber(changed) > 0 then
+                LogAction(adminId, adminName, 'TICKET_ASSIGN', tostring(ticketId), '', { ticketId = ticketId })
+                TriggerClientEvent('lyxpanel:notify', s, 'success', 'Ticket asignado')
+            else
+                TriggerClientEvent('lyxpanel:notify', s, 'error', 'Ticket no encontrado o cerrado')
+            end
+        end
+    )
+end)
+
+RegisterNetEvent('lyxpanel:action:ticketReply', function(ticketId, message)
+    local s = source
+    if not HasPermission(s, 'canManageTickets') then return end
+    if _IsRateLimited(s, 'ticketReply', _GetCooldownMs('ticketReply', 1200)) then return end
+
+    ticketId = tonumber(ticketId)
+    if not ticketId or ticketId <= 0 then
+        TriggerClientEvent('lyxpanel:notify', s, 'error', 'Ticket invalido')
+        return
+    end
+
+    local msgMax = _GetLimitNumber('maxTicketReplyLength', 900)
+    message = (LyxPanelLib and LyxPanelLib.Sanitize and LyxPanelLib.Sanitize(message or '', msgMax)) or tostring(message or '')
+    message = message:match('^%s*(.-)%s*$') or message
+    message = message:sub(1, msgMax)
+    if message == '' then
+        TriggerClientEvent('lyxpanel:notify', s, 'error', 'Respuesta invalida')
+        return
+    end
+
+    local adminId = GetId(s, 'license')
+    local adminName = GetPlayerName(s) or 'unknown'
+
+    MySQL.query('SELECT id, player_id, player_name, subject, admin_response, status FROM lyxpanel_tickets WHERE id = ?', { ticketId },
+        function(rows)
+            local row = rows and rows[1]
+            if not row or not row.id then
+                TriggerClientEvent('lyxpanel:notify', s, 'error', 'Ticket no encontrado')
+                return
+            end
+
+            if tostring(row.status or '') == 'closed' then
+                TriggerClientEvent('lyxpanel:notify', s, 'warning', 'El ticket esta cerrado (reabrilo primero)')
+                return
+            end
+
+            local stamp = os.date('%Y-%m-%d %H:%M:%S')
+            local prefix = ('[%s] %s: '):format(stamp, adminName)
+            local previous = tostring(row.admin_response or '')
+            if previous ~= '' then
+                previous = previous .. '\n\n'
+            end
+
+            local newResponse = previous .. prefix .. message
+            -- Keep it bounded to avoid huge DB rows.
+            if #newResponse > 8000 then
+                newResponse = newResponse:sub(#newResponse - 8000)
+            end
+
+            MySQL.update(
+                'UPDATE lyxpanel_tickets SET admin_response = ?, status = \"answered\", assigned_to_id = ?, assigned_to_name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+                { newResponse, adminId, adminName, ticketId },
+                function()
+                    LogAction(adminId, adminName, 'TICKET_REPLY', tostring(row.player_id or ''), tostring(row.player_name or ''), {
+                        ticketId = ticketId,
+                        subject = tostring(row.subject or ''),
+                    })
+                    TriggerClientEvent('lyxpanel:notify', s, 'success', 'Respuesta guardada')
+                end
+            )
+        end)
+end)
+
+RegisterNetEvent('lyxpanel:action:ticketClose', function(ticketId, reason)
+    local s = source
+    if not HasPermission(s, 'canManageTickets') then return end
+    if _IsRateLimited(s, 'ticketClose', _GetCooldownMs('ticketClose', 1200)) then return end
+
+    ticketId = tonumber(ticketId)
+    if not ticketId or ticketId <= 0 then
+        TriggerClientEvent('lyxpanel:notify', s, 'error', 'Ticket invalido')
+        return
+    end
+
+    local reasonMax = _GetLimitNumber('maxReasonLength', 200)
+    reason = (LyxPanelLib and LyxPanelLib.Sanitize and LyxPanelLib.Sanitize(reason or '', reasonMax)) or tostring(reason or '')
+    reason = reason:match('^%s*(.-)%s*$') or reason
+    reason = reason:sub(1, reasonMax)
+
+    local adminId = GetId(s, 'license')
+    local adminName = GetPlayerName(s) or 'unknown'
+
+    MySQL.query('SELECT id, player_id, player_name, subject, status FROM lyxpanel_tickets WHERE id = ?', { ticketId },
+        function(rows)
+            local row = rows and rows[1]
+            if not row or not row.id then
+                TriggerClientEvent('lyxpanel:notify', s, 'error', 'Ticket no encontrado')
+                return
+            end
+            if tostring(row.status or '') == 'closed' then
+                TriggerClientEvent('lyxpanel:notify', s, 'info', 'El ticket ya estaba cerrado')
+                return
+            end
+
+            MySQL.update(
+                'UPDATE lyxpanel_tickets SET status = \"closed\", closed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+                { ticketId },
+                function()
+                    LogAction(adminId, adminName, 'TICKET_CLOSE', tostring(row.player_id or ''), tostring(row.player_name or ''), {
+                        ticketId = ticketId,
+                        subject = tostring(row.subject or ''),
+                        reason = reason
+                    })
+                    TriggerClientEvent('lyxpanel:notify', s, 'success', 'Ticket cerrado')
+                end
+            )
+        end)
+end)
+
+RegisterNetEvent('lyxpanel:action:ticketReopen', function(ticketId)
+    local s = source
+    if not HasPermission(s, 'canManageTickets') then return end
+    if _IsRateLimited(s, 'ticketReopen', _GetCooldownMs('ticketReopen', 900)) then return end
+
+    ticketId = tonumber(ticketId)
+    if not ticketId or ticketId <= 0 then
+        TriggerClientEvent('lyxpanel:notify', s, 'error', 'Ticket invalido')
+        return
+    end
+
+    local adminId = GetId(s, 'license')
+    local adminName = GetPlayerName(s) or 'unknown'
+
+    MySQL.query('SELECT id, player_id, player_name, subject, status FROM lyxpanel_tickets WHERE id = ?', { ticketId },
+        function(rows)
+            local row = rows and rows[1]
+            if not row or not row.id then
+                TriggerClientEvent('lyxpanel:notify', s, 'error', 'Ticket no encontrado')
+                return
+            end
+
+            if tostring(row.status or '') ~= 'closed' then
+                TriggerClientEvent('lyxpanel:notify', s, 'info', 'El ticket no esta cerrado')
+                return
+            end
+
+            MySQL.update(
+                'UPDATE lyxpanel_tickets SET status = \"open\", closed_at = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+                { ticketId },
+                function()
+                    LogAction(adminId, adminName, 'TICKET_REOPEN', tostring(row.player_id or ''), tostring(row.player_name or ''), {
+                        ticketId = ticketId,
+                        subject = tostring(row.subject or '')
+                    })
+                    TriggerClientEvent('lyxpanel:notify', s, 'success', 'Ticket reabierto')
+                end
+            )
+        end)
+end)
+
 -- Legacy duplicated block removed to keep a single authoritative implementation
 -- for all admin actions in this file.
+
+exports('GetDangerApprovalsState', function()
+    _PruneDangerApprovals(GetGameTimer())
+    local rows = {}
+    local nowMs = GetGameTimer()
+    for _, req in pairs(_DangerApprovals.byId) do
+        rows[#rows + 1] = {
+            id = req.id,
+            requester = req.requester,
+            requesterName = req.requesterName,
+            actionName = req.actionName,
+            targetId = req.targetId,
+            reason = req.reason,
+            approvedBy = req.approvedBy,
+            approvedByName = req.approvedByName,
+            expiresInMs = math.max((req.expiresAtMs or nowMs) - nowMs, 0)
+        }
+    end
+    table.sort(rows, function(a, b) return (a.id or 0) > (b.id or 0) end)
+    return {
+        count = #rows,
+        rows = rows
+    }
+end)
 
 
 
