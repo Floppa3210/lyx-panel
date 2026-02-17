@@ -1,7 +1,7 @@
 # LyxPanel - Comparaciones y Alcance
 
 Este documento compara el enfoque de LyxPanel con:
-- paneles open source (ejemplos locales en `adminpanel-copiar`)
+- paneles open source 
 - paneles/anticheats de pago tipo "suite" (web + licencias + ecommerce)
 - enfoque de anticheats conocidos (referencia: FiveGuard y similares)
 
