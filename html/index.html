@@ -1,0 +1,1547 @@
+﻿<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>LyxPanel v3.0 - Ultra Premium Admin</title>
+    <link rel="stylesheet" href="css/style.css" />
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+    />
+  </head>
+
+  <body>
+    <div id="app" class="hidden">
+      <!-- Sidebar -->
+      <aside class="sidebar">
+        <div class="sidebar-header">
+          <div class="logo">
+            <i class="fas fa-shield-halved"></i><span>LyxPanel</span>
+          </div>
+          <span class="version">v3.0</span>
+        </div>
+        <div class="integration-pill" id="guardStatusPill">
+          <i class="fas fa-link"></i>
+          <span>LyxGuard: verificando...</span>
+        </div>
+        <nav class="sidebar-nav">
+          <button class="nav-item active" data-page="dashboard">
+            <i class="fas fa-chart-pie"></i><span>Dashboard</span>
+          </button>
+          <button class="nav-item" data-page="players">
+            <i class="fas fa-users"></i><span>Jugadores</span>
+          </button>
+          <button class="nav-item" data-page="vehicles">
+            <i class="fas fa-car"></i><span>Vehículos</span>
+          </button>
+          <button class="nav-item" data-page="weapons">
+            <i class="fas fa-gun"></i><span>Armas</span>
+          </button>
+          <button class="nav-item" data-page="economy">
+            <i class="fas fa-coins"></i><span>Economía</span>
+          </button>
+          <button class="nav-item" data-page="world">
+            <i class="fas fa-globe"></i><span>Mundo</span>
+          </button>
+          <button class="nav-item" data-page="reports">
+            <i class="fas fa-flag"></i><span>Reportes</span>
+          </button>
+          <button class="nav-item" data-page="bans">
+            <i class="fas fa-ban"></i><span>Bans</span>
+          </button>
+          <button class="nav-item" data-page="detections">
+            <i class="fas fa-radar"></i><span>Detecciones</span>
+          </button>
+          <button class="nav-item" data-page="whitelist">
+            <i class="fas fa-list-check"></i><span>Whitelist</span>
+          </button>
+          <button class="nav-item" data-page="history">
+            <i class="fas fa-history"></i><span>Historial</span>
+          </button>
+          <button class="nav-item" data-page="logs">
+            <i class="fas fa-scroll"></i><span>Auditoria</span>
+          </button>
+          <button class="nav-item" data-page="permissions" id="nav-permissions">
+            <i class="fas fa-user-lock"></i><span>Permisos</span>
+          </button>
+          <button class="nav-item" data-page="tools">
+            <i class="fas fa-toolbox"></i><span>Herramientas</span>
+          </button>
+          <button class="nav-item" data-page="settings">
+            <i class="fas fa-cog"></i><span>Ajustes</span>
+          </button>
+        </nav>
+
+        <div class="sidebar-footer">
+          <div class="admin-info">
+            <div class="admin-avatar"><i class="fas fa-user-shield"></i></div>
+            <div class="admin-details">
+              <span class="admin-name">Admin</span>
+              <span class="admin-role" id="adminRole">SuperAdmin</span>
+            </div>
+          </div>
+          <button class="btn-close" onclick="closePanel()">
+            <i class="fas fa-times"></i>
+          </button>
+        </div>
+      </aside>
+
+      <!-- Main Content -->
+      <main class="main-content">
+        <!-- Dashboard -->
+        <section id="page-dashboard" class="page active">
+          <div class="page-header">
+            <h1><i class="fas fa-chart-pie"></i> Dashboard</h1>
+            <button class="btn btn-primary" onclick="refreshData()">
+              <i class="fas fa-sync-alt"></i> Actualizar
+            </button>
+          </div>
+          <div class="stats-grid">
+            <div class="stat-card">
+              <div class="stat-icon gradient-blue">
+                <i class="fas fa-users"></i>
+              </div>
+              <div class="stat-info">
+                <span class="stat-value" id="statPlayers">0/32</span
+                ><span class="stat-label">Jugadores</span>
+              </div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-icon gradient-red">
+                <i class="fas fa-exclamation-triangle"></i>
+              </div>
+              <div class="stat-info">
+                <span class="stat-value" id="statDetections">0</span
+                ><span class="stat-label">Detecciones Hoy</span>
+              </div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-icon gradient-orange">
+                <i class="fas fa-ban"></i>
+              </div>
+              <div class="stat-info">
+                <span class="stat-value" id="statBans">0</span
+                ><span class="stat-label">Bans Activos</span>
+              </div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-icon gradient-yellow">
+                <i class="fas fa-flag"></i>
+              </div>
+              <div class="stat-info">
+                <span class="stat-value" id="statReports">0</span
+                ><span class="stat-label">Reportes Abiertos</span>
+              </div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-icon gradient-purple">
+                <i class="fas fa-clock"></i>
+              </div>
+              <div class="stat-info">
+                <span class="stat-value" id="statUptime">--</span
+                ><span class="stat-label">Uptime</span>
+              </div>
+            </div>
+          </div>
+          <div class="quick-actions">
+            <h2><i class="fas fa-bolt"></i> Acciones Rápidas</h2>
+            <div class="actions-grid">
+              <button
+                class="action-btn"
+                onclick="toggleNoclip()"
+                id="btnNoclip"
+              >
+                <i class="fas fa-ghost"></i><span>Noclip</span>
+              </button>
+              <button
+                class="action-btn"
+                onclick="toggleGodmode()"
+                id="btnGodmode"
+              >
+                <i class="fas fa-heart"></i><span>Godmode</span>
+              </button>
+              <button
+                class="action-btn"
+                onclick="toggleInvisible()"
+                id="btnInvisible"
+              >
+                <i class="fas fa-eye-slash"></i><span>Invisible</span>
+              </button>
+              <button
+                class="action-btn"
+                onclick="toggleStaffStatus()"
+                id="btnStaffStatus"
+              >
+                <i class="fas fa-id-badge"></i><span>Staff</span>
+              </button>
+              <button class="action-btn" onclick="healSelf()">
+                <i class="fas fa-medkit"></i><span>Curarse</span>
+              </button>
+              <button class="action-btn" onclick="reviveSelf()">
+                <i class="fas fa-heart-pulse"></i><span>Revivirse</span>
+              </button>
+              <button class="action-btn" onclick="setArmorSelf()">
+                <i class="fas fa-shield-halved"></i><span>Armadura 100</span>
+              </button>
+              <button class="action-btn" onclick="disarmSelf()">
+                <i class="fas fa-gun-slash"></i><span>Quitar Armas</span>
+              </button>
+              <button class="action-btn" onclick="openAnnounce()">
+                <i class="fas fa-bullhorn"></i><span>Anunciar</span>
+              </button>
+              <button class="action-btn" onclick="openAdminChat()">
+                <i class="fas fa-comments"></i><span>Admin Chat</span>
+              </button>
+              <button class="action-btn" onclick="teleportMarker()">
+                <i class="fas fa-map-marker"></i><span>TP Marker</span>
+              </button>
+              <button class="action-btn" onclick="deleteMyVehicle()">
+                <i class="fas fa-trash-alt"></i><span>Borrar Veh</span>
+              </button>
+              <button class="action-btn" onclick="repairMyVehicle()">
+                <i class="fas fa-wrench"></i><span>Reparar</span>
+              </button>
+              <button class="action-btn" onclick="cleanMyVehicle()">
+                <i class="fas fa-broom"></i><span>Limpiar</span>
+              </button>
+              <button class="action-btn" onclick="flipMyVehicle()">
+                <i class="fas fa-arrows-rotate"></i><span>Voltear</span>
+              </button>
+              <button class="action-btn" onclick="tuneMyVehicle()">
+                <i class="fas fa-bolt"></i><span>Tunear</span>
+              </button>
+              <button class="action-btn" onclick="setMyVehiclePlate()">
+                <i class="fas fa-id-card"></i><span>Placa</span>
+              </button>
+              <button class="action-btn" onclick="toggleMyVehicleEngine()">
+                <i class="fas fa-power-off"></i><span>Motor</span>
+              </button>
+              <button class="action-btn" onclick="toggleMyVehicleDoors()">
+                <i class="fas fa-car-side"></i><span>Puertas</span>
+              </button>
+              <button class="action-btn" onclick="setMyVehicleFuel()">
+                <i class="fas fa-gas-pump"></i><span>Combustible</span>
+              </button>
+              <button class="action-btn" onclick="fullServiceMyVehicle()">
+                <i class="fas fa-screwdriver-wrench"></i><span>Servicio Full</span>
+              </button>
+              <button class="action-btn" onclick="freezeMyVehicle()" id="btnFreezeVehicle">
+                <i class="fas fa-snowflake"></i><span>Congelar Veh</span>
+              </button>
+              <button class="action-btn" onclick="warpOutMyVehicle()">
+                <i class="fas fa-right-from-bracket"></i><span>Salir del Veh</span>
+              </button>
+              <button
+                class="action-btn"
+                onclick="toggleGhostVehicle()"
+                id="btnGhostVehicle"
+              >
+                <i class="fas fa-ghost"></i><span>Ghost Veh</span>
+              </button>
+              <button
+                class="action-btn"
+                onclick="toggleSpeedboost()"
+                id="btnSpeedboost"
+              >
+                <i class="fas fa-person-running"></i><span>Speed</span>
+              </button>
+              <button class="action-btn" onclick="toggleNitro()" id="btnNitro">
+                <i class="fas fa-gauge-high"></i><span>Nitro</span>
+              </button>
+              <button
+                class="action-btn"
+                onclick="toggleVehicleGodmode()"
+                id="btnVehicleGodmode"
+              >
+                <i class="fas fa-shield"></i><span>Veh God</span>
+              </button>
+              <!-- v4.3 ELITE FEATURES -->
+              <button
+                class="action-btn"
+                onclick="toggleFreecam()"
+                id="btnFreecam"
+              >
+                <i class="fas fa-video"></i><span>Freecam</span>
+              </button>
+              <button class="action-btn" onclick="openZoneCleanup()">
+                <i class="fas fa-broom"></i><span>Limpiar Zona</span>
+              </button>
+              <button class="action-btn" onclick="openWarpsManager()">
+                <i class="fas fa-bookmark"></i><span>Warps</span>
+              </button>
+              <button class="action-btn" onclick="scanArea()">
+                <i class="fas fa-radar"></i><span>Escanear</span>
+              </button>
+              <button class="action-btn" onclick="spectateNearest()">
+                <i class="fas fa-binoculars"></i><span>Spectar +Cerca</span>
+              </button>
+              <button class="action-btn" onclick="reviveAllPlayers()">
+                <i class="fas fa-heartbeat"></i><span>Revivir All</span>
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <!-- Players -->
+        <section id="page-players" class="page">
+          <div class="page-header">
+            <h1><i class="fas fa-users"></i> Jugadores</h1>
+            <div class="search-box">
+              <i class="fas fa-search"></i
+              ><input
+                type="text"
+                id="playerSearch"
+                placeholder="Buscar..."
+                oninput="filterPlayers()"
+              />
+            </div>
+          </div>
+          <div class="table-container">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Nombre</th>
+                  <th>Trabajo</th>
+                  <th>Dinero</th>
+                  <th>Ping</th>
+                  <th>Acciones</th>
+                </tr>
+              </thead>
+              <tbody id="playersTableBody"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- Vehicles -->
+        <section id="page-vehicles" class="page">
+          <div class="page-header">
+            <h1><i class="fas fa-car"></i> Vehículos</h1>
+          </div>
+
+          <!-- Vehicle Management Controls -->
+          <div class="tools-grid" style="margin-bottom: 20px">
+            <div class="tool-card">
+              <h3><i class="fas fa-plus-circle"></i> Spawn Personalizado</h3>
+              <input
+                type="text"
+                id="customVehicleName"
+                placeholder="Nombre del vehículo (ej: adder)"
+                class="input-full"
+              />
+              <button
+                class="btn btn-primary btn-full"
+                onclick="spawnCustomVehicle()"
+              >
+                <i class="fas fa-car"></i> Spawnear
+              </button>
+            </div>
+            <div class="tool-card">
+              <h3><i class="fas fa-tools"></i> Mi Vehículo Actual</h3>
+              <div class="btn-row">
+                <button class="btn btn-success" onclick="repairMyVehicle()">
+                  <i class="fas fa-wrench"></i> Reparar
+                </button>
+                <button class="btn btn-secondary" onclick="cleanMyVehicle()">
+                  <i class="fas fa-soap"></i> Limpiar
+                </button>
+              </div>
+              <div class="btn-row" style="margin-top: 10px">
+                <button class="btn btn-primary" onclick="tuneMyVehicle()">
+                  <i class="fas fa-tachometer-alt"></i> Tunear Max
+                </button>
+                <button class="btn btn-warning" onclick="toggleGhostVehicle()">
+                  <i class="fas fa-ghost"></i> Modo Ghost
+                </button>
+              </div>
+            </div>
+            <div class="tool-card">
+              <h3><i class="fas fa-palette"></i> Color Vehículo</h3>
+              <div style="display: flex; gap: 10px; margin-bottom: 10px">
+                <input
+                  type="color"
+                  id="vehiclePrimaryColor"
+                  value="#ff0000"
+                  style="width: 50%; height: 40px"
+                />
+                <input
+                  type="color"
+                  id="vehicleSecondaryColor"
+                  value="#000000"
+                  style="width: 50%; height: 40px"
+                />
+              </div>
+              <button
+                class="btn btn-primary btn-full"
+                onclick="setVehicleColors()"
+              >
+                <i class="fas fa-fill-drip"></i> Aplicar Colores
+              </button>
+            </div>
+            <div class="tool-card">
+              <h3><i class="fas fa-sliders-h"></i> Tuning Avanzado</h3>
+              <div style="display: grid; gap: 8px">
+                <div style="display: flex; gap: 8px">
+                  <input type="number" id="vehicleLiveryIndex" class="input-full" min="-1" max="200" value="-1" placeholder="Livery (-1 auto)" />
+                  <button class="btn btn-primary" onclick="applyVehicleLivery()">Livery</button>
+                </div>
+                <div style="display: flex; gap: 8px">
+                  <input type="number" id="vehicleExtraId" class="input-full" min="0" max="20" value="1" placeholder="Extra ID" />
+                  <select id="vehicleExtraEnabled" class="input-full">
+                    <option value="1">Activar</option>
+                    <option value="0">Desactivar</option>
+                  </select>
+                  <button class="btn btn-secondary" onclick="applyVehicleExtra()">Extra</button>
+                </div>
+                <div style="display: flex; gap: 8px">
+                  <input type="color" id="vehicleNeonColor" value="#00ccff" class="input-full" />
+                  <select id="vehicleNeonEnabled" class="input-full">
+                    <option value="1">Neon ON</option>
+                    <option value="0">Neon OFF</option>
+                  </select>
+                  <button class="btn btn-primary" onclick="applyVehicleNeon()">Neon</button>
+                </div>
+                <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px">
+                  <select id="vehicleModEngine" class="input-full">
+                    <option value="-1">Engine Stock</option>
+                    <option value="0">Engine Lv1</option>
+                    <option value="1">Engine Lv2</option>
+                    <option value="2">Engine Lv3</option>
+                    <option value="3">Engine Lv4</option>
+                    <option value="4">Engine Lv5</option>
+                  </select>
+                  <select id="vehicleModBrakes" class="input-full">
+                    <option value="-1">Brakes Stock</option>
+                    <option value="0">Brakes Lv1</option>
+                    <option value="1">Brakes Lv2</option>
+                    <option value="2">Brakes Lv3</option>
+                    <option value="3">Brakes Lv4</option>
+                    <option value="4">Brakes Lv5</option>
+                  </select>
+                  <select id="vehicleModTransmission" class="input-full">
+                    <option value="-1">Trans Stock</option>
+                    <option value="0">Trans Lv1</option>
+                    <option value="1">Trans Lv2</option>
+                    <option value="2">Trans Lv3</option>
+                    <option value="3">Trans Lv4</option>
+                  </select>
+                  <select id="vehicleModSuspension" class="input-full">
+                    <option value="-1">Susp Stock</option>
+                    <option value="0">Susp Lv1</option>
+                    <option value="1">Susp Lv2</option>
+                    <option value="2">Susp Lv3</option>
+                    <option value="3">Susp Lv4</option>
+                  </select>
+                  <select id="vehicleModArmor" class="input-full">
+                    <option value="-1">Armor Stock</option>
+                    <option value="0">Armor Lv1</option>
+                    <option value="1">Armor Lv2</option>
+                    <option value="2">Armor Lv3</option>
+                    <option value="3">Armor Lv4</option>
+                    <option value="4">Armor Lv5</option>
+                  </select>
+                  <select id="vehicleModTurbo" class="input-full">
+                    <option value="1">Turbo ON</option>
+                    <option value="0">Turbo OFF</option>
+                  </select>
+                </div>
+                <button class="btn btn-success btn-full" onclick="applyVehicleModkit()">
+                  <i class="fas fa-screwdriver-wrench"></i> Aplicar Modkit
+                </button>
+              </div>
+            </div>
+            <div class="tool-card">
+              <h3><i class="fas fa-spray-can"></i> Pintura y Luces</h3>
+              <div style="display: grid; gap: 8px">
+                <div style="display: flex; gap: 8px">
+                  <input type="color" id="vehicleSmokeColor" value="#ffffff" class="input-full" />
+                  <button class="btn btn-secondary" onclick="applyVehicleWheelSmoke()">Humo Ruedas</button>
+                </div>
+                <div style="display: flex; gap: 8px">
+                  <input type="number" id="vehiclePearlescentColor" class="input-full" min="0" max="160" value="0" placeholder="Pearlescent" />
+                  <input type="number" id="vehicleWheelColor" class="input-full" min="0" max="160" value="0" placeholder="Wheel Color" />
+                  <button class="btn btn-secondary" onclick="applyVehiclePaintAdvanced()">Aplicar</button>
+                </div>
+                <div style="display: flex; gap: 8px">
+                  <select id="vehicleXenonEnabled" class="input-full">
+                    <option value="1">Xenon ON</option>
+                    <option value="0">Xenon OFF</option>
+                  </select>
+                  <input type="number" id="vehicleXenonColor" class="input-full" min="-1" max="13" value="-1" placeholder="Color Xenon" />
+                  <button class="btn btn-primary" onclick="applyVehicleXenon()">Xenon</button>
+                </div>
+              </div>
+            </div>
+            <div class="tool-card">
+              <h3><i class="fas fa-trash-alt"></i> Gestión Zona</h3>
+              <button
+                class="btn btn-danger btn-full"
+                onclick="deleteNearbyVehicles()"
+              >
+                <i class="fas fa-car-crash"></i> Borrar Vehículos Cercanos
+              </button>
+              <button
+                class="btn btn-secondary btn-full"
+                style="margin-top: 10px"
+                onclick="flipMyVehicle()"
+              >
+                <i class="fas fa-sync"></i> Voltear Mi Vehículo
+              </button>
+            </div>
+          </div>
+
+          <h2 style="margin-bottom: 15px">
+            <i class="fas fa-list"></i> Categorías de Vehículos
+          </h2>
+          <div class="categories-container" id="vehicleCategories"></div>
+        </section>
+
+        <!-- Weapons -->
+        <section id="page-weapons" class="page">
+          <div class="page-header">
+            <h1><i class="fas fa-gun"></i> Armas</h1>
+          </div>
+          <!-- Ammo Controls -->
+          <div class="tools-grid" style="margin-bottom: 20px">
+            <div class="tool-card">
+              <h3><i class="fas fa-crosshairs"></i> Cantidad de Munición</h3>
+              <div class="ammo-selector">
+                <button class="ammo-btn" onclick="setAmmoAmount(25)">25</button>
+                <button class="ammo-btn" onclick="setAmmoAmount(50)">50</button>
+                <button class="ammo-btn" onclick="setAmmoAmount(100)">
+                  100
+                </button>
+                <button class="ammo-btn active" onclick="setAmmoAmount(250)">
+                  250
+                </button>
+                <button class="ammo-btn" onclick="setAmmoAmount(500)">
+                  500
+                </button>
+                <button class="ammo-btn" onclick="setAmmoAmount(1000)">
+                  1000
+                </button>
+              </div>
+              <div style="display: flex; gap: 10px; margin-top: 10px">
+                <input
+                  type="number"
+                  id="customAmmoAmount"
+                  placeholder="Cantidad personalizada"
+                  class="input-full"
+                  min="1"
+                  max="9999"
+                />
+                <button class="btn btn-secondary" onclick="setCustomAmmo()">
+                  Aplicar
+                </button>
+              </div>
+              <p
+                style="
+                  margin-top: 10px;
+                  color: var(--text-secondary);
+                  font-size: 0.85rem;
+                "
+              >
+                <i class="fas fa-info-circle"></i> Munición actual:
+                <strong id="currentAmmoDisplay">250</strong>
+              </p>
+            </div>
+            <div class="tool-card">
+              <h3><i class="fas fa-box-open"></i> Dar Solo Munición</h3>
+              <input
+                type="text"
+                id="ammoWeaponName"
+                placeholder="WEAPON_PISTOL"
+                class="input-full"
+              />
+              <input
+                type="number"
+                id="ammoOnlyAmount"
+                placeholder="Cantidad de balas"
+                class="input-full"
+                value="250"
+              />
+              <div class="btn-row">
+                <button
+                  class="btn btn-primary btn-full"
+                  onclick="giveAmmoOnlySelf()"
+                >
+                  <i class="fas fa-bullseye"></i> Darme Balas
+                </button>
+              </div>
+            </div>
+            <div class="tool-card">
+              <h3><i class="fas fa-plus-circle"></i> Arma Personalizada</h3>
+              <input
+                type="text"
+                id="customWeaponName"
+                placeholder="WEAPON_PISTOL"
+                class="input-full"
+              />
+              <input
+                type="number"
+                id="customWeaponAmmo"
+                placeholder="Munición"
+                class="input-full"
+                value="250"
+              />
+              <div class="btn-row">
+                <button
+                  class="btn btn-primary btn-full"
+                  onclick="giveCustomWeaponSelf()"
+                >
+                  <i class="fas fa-plus"></i> Darme Arma
+                </button>
+              </div>
+            </div>
+          </div>
+          <h2 style="margin-bottom: 15px">
+            <i class="fas fa-list"></i> Categorías de Armas
+          </h2>
+          <div class="categories-container" id="weaponCategories"></div>
+        </section>
+
+        <!-- Economy -->
+        <section id="page-economy" class="page">
+          <div class="page-header">
+            <h1><i class="fas fa-coins"></i> Economía</h1>
+          </div>
+          <div class="tools-grid">
+            <div class="tool-card">
+              <h3><i class="fas fa-dollar-sign"></i> Dar Dinero</h3>
+              <select id="ecoTargetPlayer" class="input-full"></select>
+              <select id="ecoAccount" class="input-full">
+                <option value="money">Efectivo</option>
+                <option value="bank">Banco</option>
+                <option value="black_money">Dinero Negro</option>
+              </select>
+              <input
+                type="number"
+                id="ecoAmount"
+                placeholder="Cantidad"
+                class="input-full"
+              />
+              <div class="btn-row">
+                <button class="btn btn-primary" onclick="ecoGive()">Dar</button>
+                <button class="btn btn-secondary" onclick="ecoSet()">
+                  Establecer
+                </button>
+                <button class="btn btn-danger" onclick="ecoRemove()">
+                  Quitar
+                </button>
+              </div>
+            </div>
+            <div class="tool-card">
+              <h3><i class="fas fa-exchange"></i> Transferir</h3>
+              <select id="ecoFromPlayer" class="input-full"></select>
+              <select id="ecoToPlayer" class="input-full"></select>
+              <input
+                type="number"
+                id="ecoTransferAmount"
+                placeholder="Cantidad"
+                class="input-full"
+              />
+              <button class="btn btn-primary btn-full" onclick="ecoTransfer()">
+                Transferir
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <!-- World -->
+        <section id="page-world" class="page">
+          <div class="page-header">
+            <h1><i class="fas fa-globe"></i> Mundo</h1>
+          </div>
+          <div class="tools-grid">
+            <div class="tool-card">
+              <h3><i class="fas fa-cloud-sun"></i> Clima</h3>
+              <select id="weatherSelect" class="input-full"></select>
+              <button class="btn btn-primary btn-full" onclick="setWeather()">
+                Aplicar Clima
+              </button>
+            </div>
+            <div class="tool-card">
+              <h3><i class="fas fa-clock"></i> Hora</h3>
+              <input
+                type="number"
+                id="timeHour"
+                placeholder="Hora (0-23)"
+                min="0"
+                max="23"
+                class="input-half"
+              />
+              <input
+                type="number"
+                id="timeMinute"
+                placeholder="Min (0-59)"
+                min="0"
+                max="59"
+                class="input-half"
+              />
+              <button class="btn btn-primary btn-full" onclick="setTime()">
+                Aplicar Hora
+              </button>
+            </div>
+            <div class="tool-card">
+              <h3><i class="fas fa-location-dot"></i> Teleport Rápido</h3>
+              <div id="spawnPointsList"></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Reports -->
+        <section id="page-reports" class="page">
+          <div class="page-header">
+            <h1><i class="fas fa-flag"></i> Reportes</h1>
+            <button class="btn btn-primary" onclick="loadReports()">
+              <i class="fas fa-sync-alt"></i>
+            </button>
+          </div>
+          <div class="table-container">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>De</th>
+                  <th>Razón</th>
+                  <th>Prioridad</th>
+                  <th>Estado</th>
+                  <th>Acciones</th>
+                </tr>
+              </thead>
+              <tbody id="reportsTableBody"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- Bans -->
+        <section id="page-bans" class="page">
+          <div class="page-header">
+            <h1><i class="fas fa-ban"></i> Bans</h1>
+            <div>
+              <button class="btn btn-success" onclick="openUnbanModal()">
+                <i class="fas fa-user-check"></i> Desbanear
+              </button>
+              <button class="btn btn-primary" onclick="loadBans()">
+                <i class="fas fa-sync-alt"></i>
+              </button>
+            </div>
+          </div>
+          <div class="table-container">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Jugador</th>
+                  <th>Razón</th>
+                  <th>Por</th>
+                  <th>Fecha</th>
+                  <th>Expira</th>
+                  <th>Acciones</th>
+                </tr>
+              </thead>
+              <tbody id="bansTableBody"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- Detections -->
+        <section id="page-detections" class="page">
+          <div class="page-header">
+            <h1><i class="fas fa-radar"></i> Detecciones</h1>
+            <div>
+              <button class="btn btn-danger" onclick="clearAllDetections()">
+                <i class="fas fa-trash"></i> Limpiar Todo
+              </button>
+              <button class="btn btn-primary" onclick="loadDetections()">
+                <i class="fas fa-sync-alt"></i>
+              </button>
+            </div>
+          </div>
+          <div class="table-container">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Fecha</th>
+                  <th>Jugador</th>
+                  <th>Tipo</th>
+                  <th>Castigo</th>
+                  <th>Acciones</th>
+                </tr>
+              </thead>
+              <tbody id="detectionsTableBody"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- Whitelist -->
+        <section id="page-whitelist" class="page">
+          <div class="page-header">
+            <h1><i class="fas fa-list-check"></i> Whitelist</h1>
+            <div>
+              <button class="btn btn-primary" onclick="openAddWhitelist()">
+                <i class="fas fa-plus"></i> Añadir
+              </button>
+              <button class="btn btn-secondary" onclick="loadWhitelist()">
+                <i class="fas fa-sync-alt"></i>
+              </button>
+            </div>
+          </div>
+          <div class="table-container">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Nombre</th>
+                  <th>Identifier</th>
+                  <th>Añadido por</th>
+                  <th>Fecha</th>
+                  <th>Acciones</th>
+                </tr>
+              </thead>
+              <tbody id="whitelistTable"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- History -->
+        <section id="page-history" class="page">
+          <div class="page-header">
+            <h1><i class="fas fa-history"></i> Historial y Búsqueda</h1>
+          </div>
+          <div class="tool-card">
+            <h3><i class="fas fa-search"></i> Buscar Jugador</h3>
+            <div style="display: flex; gap: 10px">
+              <input
+                type="text"
+                id="offlineSearch"
+                placeholder="Nombre o Identifier..."
+                class="input-full"
+                style="flex: 1"
+              />
+              <button class="btn btn-primary" onclick="searchOfflinePlayers()">
+                <i class="fas fa-search"></i> Buscar
+              </button>
+            </div>
+            <div id="searchResults" style="margin-top: 15px"></div>
+          </div>
+        </section>
+        <!-- Auditoria -->
+        <section id="page-logs" class="page">
+          <div class="page-header">
+            <h1><i class="fas fa-scroll"></i> Auditoria</h1>
+            <div style="display: flex; gap: 10px; flex-wrap: wrap">
+              <button class="btn btn-secondary" onclick="auditReset()">
+                <i class="fas fa-rotate-left"></i> Reset
+              </button>
+              <button class="btn btn-primary" onclick="auditApply()">
+                <i class="fas fa-filter"></i> Aplicar
+              </button>
+              <button class="btn btn-secondary" onclick="auditExport('json')">
+                <i class="fas fa-file-code"></i> Export JSON
+              </button>
+              <button class="btn btn-secondary" onclick="auditExport('csv')">
+                <i class="fas fa-file-csv"></i> Export CSV
+              </button>
+              <button class="btn btn-danger" id="btnClearLogs" onclick="clearLogs()">
+                <i class="fas fa-trash"></i> Borrar logs
+              </button>
+            </div>
+          </div>
+
+          <div class="tool-card" style="margin-bottom: 15px">
+            <h3><i class="fas fa-filter"></i> Filtros</h3>
+            <div style="display: flex; gap: 10px; flex-wrap: wrap">
+              <input
+                type="text"
+                id="auditAdmin"
+                placeholder="Admin (nombre o license...)"
+                class="input-full"
+                style="flex: 1; min-width: 240px"
+              />
+              <input
+                type="text"
+                id="auditTarget"
+                placeholder="Target (nombre o id/license...)"
+                class="input-full"
+                style="flex: 1; min-width: 240px"
+              />
+              <input
+                type="text"
+                id="auditSearch"
+                placeholder="Buscar (action/details...)"
+                class="input-full"
+                style="flex: 1; min-width: 240px"
+              />
+            </div>
+
+            <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px">
+              <select id="auditAction" class="input-full" style="flex: 1; min-width: 220px">
+                <option value="">Todas las acciones</option>
+                <option value="DENIED_PERMISSION">DENIED_PERMISSION</option>
+                <option value="BAN">BAN</option>
+                <option value="UNBAN">UNBAN</option>
+                <option value="GIVE_MONEY">GIVE_MONEY</option>
+                <option value="SET_MONEY">SET_MONEY</option>
+                <option value="REMOVE_MONEY">REMOVE_MONEY</option>
+                <option value="WIPE_PLAYER">WIPE_PLAYER</option>
+                <option value="ACCESS_GRANT">ACCESS_GRANT</option>
+                <option value="ACCESS_UPDATE">ACCESS_UPDATE</option>
+                <option value="ACCESS_REVOKE">ACCESS_REVOKE</option>
+              </select>
+
+              <input type="date" id="auditDateFrom" class="input-full" style="flex: 1; min-width: 180px" />
+              <input type="date" id="auditDateTo" class="input-full" style="flex: 1; min-width: 180px" />
+
+              <select id="auditLimit" class="input-full" style="flex: 0; min-width: 120px">
+                <option value="50">50</option>
+                <option value="100" selected>100</option>
+                <option value="200">200</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="table-container">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Fecha</th>
+                  <th>Admin</th>
+                  <th>Accion</th>
+                  <th>Target</th>
+                  <th>Detalles</th>
+                </tr>
+              </thead>
+              <tbody id="logsTableBody"></tbody>
+            </table>
+          </div>
+
+          <div class="pagination" style="margin-top: 12px; display: flex; gap: 10px; align-items: center">
+            <button class="btn btn-secondary" onclick="auditPrev()">
+              <i class="fas fa-chevron-left"></i> Anterior
+            </button>
+            <span id="auditPageInfo" style="opacity: 0.8">Pagina 1</span>
+            <button class="btn btn-secondary" onclick="auditNext()">
+              Siguiente <i class="fas fa-chevron-right"></i>
+            </button>
+          </div>
+        </section>
+
+        <!-- Permisos -->
+        <section id="page-permissions" class="page">
+          <div class="page-header">
+            <h1><i class="fas fa-user-lock"></i> Permisos</h1>
+            <div style="display: flex; gap: 10px; flex-wrap: wrap">
+              <button class="btn btn-primary" onclick="permissionsLoad()">
+                <i class="fas fa-sync-alt"></i> Recargar
+              </button>
+            </div>
+          </div>
+
+          <div class="tools-grid">
+            <div class="tool-card">
+              <h3><i class="fas fa-users-gear"></i> Roles</h3>
+              <select id="permRoleSelect" class="input-full"></select>
+              <div style="display: flex; gap: 10px; margin-top: 10px">
+                <button class="btn btn-primary btn-full" onclick="permissionsLoadRole()">
+                  <i class="fas fa-eye"></i> Ver rol
+                </button>
+                <button class="btn btn-danger btn-full" onclick="permissionsResetRole()">
+                  <i class="fas fa-rotate-left"></i> Reset override
+                </button>
+              </div>
+              <input
+                type="text"
+                id="permKeySearch"
+                placeholder="Buscar permiso..."
+                class="input-full"
+                style="margin-top: 10px"
+              />
+              <div id="permRoleTable" style="margin-top: 10px; max-height: 420px; overflow: auto"></div>
+            </div>
+
+            <div class="tool-card">
+              <h3><i class="fas fa-user-check"></i> Permisos Individuales</h3>
+              <input
+                type="text"
+                id="permIdentifier"
+                placeholder="license:xxxx / steam:xxxx / discord:xxxx"
+                class="input-full"
+              />
+              <div style="display: flex; gap: 10px; margin-top: 10px">
+                <button class="btn btn-primary btn-full" onclick="permissionsLoadIndividual()">
+                  <i class="fas fa-eye"></i> Ver
+                </button>
+              </div>
+
+              <select id="permIndividualKey" class="input-full" style="margin-top: 10px"></select>
+              <select id="permIndividualValue" class="input-full" style="margin-top: 10px">
+                <option value="true">ALLOW</option>
+                <option value="false">DENY</option>
+              </select>
+              <input
+                type="text"
+                id="permIndividualNote"
+                placeholder="Nota (opcional)"
+                class="input-full"
+                style="margin-top: 10px"
+              />
+              <div style="display: flex; gap: 10px; margin-top: 10px">
+                <button class="btn btn-primary btn-full" onclick="permissionsSetIndividual()">
+                  <i class="fas fa-save"></i> Guardar
+                </button>
+                <button class="btn btn-danger btn-full" onclick="permissionsResetIndividual()">
+                  <i class="fas fa-trash"></i> Reset
+                </button>
+              </div>
+
+              <div id="permIndividualTable" style="margin-top: 10px; max-height: 250px; overflow: auto"></div>
+            </div>
+
+            <div class="tool-card">
+              <h3><i class="fas fa-key"></i> Acceso al Panel</h3>
+              <p style="opacity: 0.85; margin-bottom: 10px">
+                Permite dar acceso al panel a un identifier y asignarle un rol, sin tocar cfg/ace/esx groups.
+              </p>
+              <div style="display: flex; gap: 10px; flex-wrap: wrap">
+                <input
+                  type="text"
+                  id="accessIdentifier"
+                  placeholder="license:xxxx..."
+                  class="input-full"
+                  style="flex: 1; min-width: 240px"
+                />
+                <select id="accessGroup" class="input-full" style="flex: 0; min-width: 180px"></select>
+              </div>
+              <input
+                type="text"
+                id="accessNote"
+                placeholder="Nota (opcional)"
+                class="input-full"
+                style="margin-top: 10px"
+              />
+              <div style="display: flex; gap: 10px; margin-top: 10px">
+                <button class="btn btn-primary btn-full" onclick="accessGrant()">
+                  <i class="fas fa-plus"></i> Guardar
+                </button>
+                <button class="btn btn-secondary btn-full" onclick="accessReload()">
+                  <i class="fas fa-sync-alt"></i> Recargar
+                </button>
+              </div>
+              <div id="accessTable" style="margin-top: 10px; max-height: 420px; overflow: auto"></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Tools -->
+        <section id="page-tools" class="page">
+          <div class="page-header">
+            <h1><i class="fas fa-toolbox"></i> Herramientas</h1>
+          </div>
+          <div class="tools-grid">
+            <div class="tool-card">
+              <h3><i class="fas fa-location-dot"></i> Teleport Coords</h3>
+              <input
+                type="number"
+                id="tpX"
+                placeholder="X"
+                class="input-third"
+              />
+              <input
+                type="number"
+                id="tpY"
+                placeholder="Y"
+                class="input-third"
+              />
+              <input
+                type="number"
+                id="tpZ"
+                placeholder="Z"
+                class="input-third"
+              />
+              <button
+                class="btn btn-primary btn-full"
+                onclick="teleportCoords()"
+              >
+                Teleport
+              </button>
+            </div>
+            <div class="tool-card">
+              <h3><i class="fas fa-car-side"></i> Spawn Vehículo</h3>
+              <input
+                type="text"
+                id="spawnVehicleModel"
+                placeholder="Modelo (ej: adder)"
+                class="input-full"
+              />
+              <button
+                class="btn btn-primary btn-full"
+                onclick="spawnVehicleSelf()"
+              >
+                Spawn
+              </button>
+            </div>
+            <div class="tool-card">
+              <h3><i class="fas fa-box"></i> Dar Item</h3>
+              <select id="toolTargetPlayer" class="input-full"></select>
+              <input
+                type="text"
+                id="toolItemName"
+                placeholder="Nombre item"
+                class="input-full"
+              />
+              <input
+                type="number"
+                id="toolItemCount"
+                placeholder="Cantidad"
+                value="1"
+                class="input-full"
+              />
+              <button class="btn btn-primary btn-full" onclick="giveItem()">
+                Dar Item
+              </button>
+            </div>
+            <div class="tool-card">
+              <h3><i class="fas fa-user-edit"></i> Cambiar Modelo</h3>
+              <select id="modelTargetPlayer" class="input-full"></select>
+              <input
+                type="text"
+                id="modelName"
+                placeholder="Modelo ped"
+                class="input-full"
+              />
+              <button class="btn btn-primary btn-full" onclick="changeModel()">
+                Cambiar
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <!-- Settings -->
+        <section id="page-settings" class="page">
+          <div class="page-header">
+            <h1><i class="fas fa-cog"></i> Ajustes</h1>
+          </div>
+          <div class="tools-grid">
+            <div class="tool-card">
+              <h3><i class="fas fa-palette"></i> Tema del Panel</h3>
+              <div id="themesList" class="themes-grid">
+                <button
+                  class="theme-btn active"
+                  data-theme="dark"
+                  onclick="setTheme('dark')"
+                >
+                  <span
+                    class="theme-color"
+                    style="
+                      background: linear-gradient(135deg, #0a0a0f, #4f8fff);
+                    "
+                  ></span>
+                  <span>Oscuro</span>
+                </button>
+                <button
+                  class="theme-btn"
+                  data-theme="purple"
+                  onclick="setTheme('purple')"
+                >
+                  <span
+                    class="theme-color"
+                    style="
+                      background: linear-gradient(135deg, #0f0a15, #a855f7);
+                    "
+                  ></span>
+                  <span>Púrpura</span>
+                </button>
+                <button
+                  class="theme-btn"
+                  data-theme="red"
+                  onclick="setTheme('red')"
+                >
+                  <span
+                    class="theme-color"
+                    style="
+                      background: linear-gradient(135deg, #0f0a0a, #ef4444);
+                    "
+                  ></span>
+                  <span>Rojo</span>
+                </button>
+                <button
+                  class="theme-btn"
+                  data-theme="green"
+                  onclick="setTheme('green')"
+                >
+                  <span
+                    class="theme-color"
+                    style="
+                      background: linear-gradient(135deg, #0a0f0a, #22c55e);
+                    "
+                  ></span>
+                  <span>Verde</span>
+                </button>
+                <button
+                  class="theme-btn"
+                  data-theme="cyan"
+                  onclick="setTheme('cyan')"
+                >
+                  <span
+                    class="theme-color"
+                    style="
+                      background: linear-gradient(135deg, #0a0f0f, #06b6d4);
+                    "
+                  ></span>
+                  <span>Cian</span>
+                </button>
+                <button
+                  class="theme-btn"
+                  data-theme="gold"
+                  onclick="setTheme('gold')"
+                >
+                  <span
+                    class="theme-color"
+                    style="
+                      background: linear-gradient(135deg, #0f0d0a, #fbbf24);
+                    "
+                  ></span>
+                  <span>Oro</span>
+                </button>
+                <button
+                  class="theme-btn"
+                  data-theme="pink"
+                  onclick="setTheme('pink')"
+                >
+                  <span
+                    class="theme-color"
+                    style="
+                      background: linear-gradient(135deg, #0f0a0d, #ec4899);
+                    "
+                  ></span>
+                  <span>Rosa</span>
+                </button>
+                <button
+                  class="theme-btn"
+                  data-theme="ocean"
+                  onclick="setTheme('ocean')"
+                >
+                  <span
+                    class="theme-color"
+                    style="
+                      background: linear-gradient(135deg, #0a0d0f, #0ea5e9);
+                    "
+                  ></span>
+                  <span>Océano</span>
+                </button>
+              </div>
+              <div class="custom-theme-grid">
+                <label class="theme-input-label">
+                  <span>Primario</span>
+                  <input type="color" id="customThemePrimary" value="#3da5ff" />
+                </label>
+                <label class="theme-input-label">
+                  <span>Fondo</span>
+                  <input type="color" id="customThemeBackground" value="#0d1218" />
+                </label>
+                <label class="theme-input-label">
+                  <span>Secundario</span>
+                  <input type="color" id="customThemeSecondary" value="#1a1a2e" />
+                </label>
+              </div>
+              <div class="custom-theme-actions">
+                <button class="btn btn-primary" onclick="applyCustomTheme()">
+                  <i class="fas fa-brush"></i> Aplicar Custom
+                </button>
+                <button class="btn btn-danger" onclick="resetCustomTheme()">
+                  <i class="fas fa-rotate-left"></i> Reset Custom
+                </button>
+              </div>
+            </div>
+            <div class="tool-card dependency-card" id="dependencyStatusCard">
+              <h3><i class="fas fa-link"></i> Dependencias</h3>
+              <div class="dependency-row">
+                <span>LyxGuard</span>
+                <span id="settingsGuardStatus" class="status-chip offline">Inactivo</span>
+              </div>
+              <div class="dependency-row">
+                <span>Perfil Runtime</span>
+                <span id="runtimeProfileName" class="status-chip neutral">default</span>
+              </div>
+              <p id="dependencyHint" class="dependency-hint">
+                Estado de integraciones no disponible todavia.
+              </p>
+            </div>
+            <div class="tool-card">
+              <h3><i class="fas fa-volume-up"></i> Sonidos</h3>
+              <label class="toggle-label">
+                <input
+                  type="checkbox"
+                  id="soundEnabled"
+                  checked
+                  onchange="toggleSounds()"
+                />
+                <span>Sonidos de notificación</span>
+              </label>
+              <label class="toggle-label">
+                <input
+                  type="checkbox"
+                  id="reportSoundEnabled"
+                  checked
+                  onchange="toggleReportSounds()"
+                />
+                <span>Sonido de reportes</span>
+              </label>
+            </div>
+            <div class="tool-card">
+              <h3><i class="fas fa-shield"></i> Modo Seguro</h3>
+              <label class="toggle-label">
+                <input
+                  type="checkbox"
+                  id="safeModeEnabled"
+                  onchange="toggleSafeMode()"
+                />
+                <span>Simular acciones (dry-run)</span>
+              </label>
+              <p style="color: #999; font-size: 12px; margin-top: 10px">
+                Cuando está activo, las acciones soportadas se registran pero no
+                se ejecutan.
+              </p>
+            </div>
+            <div class="tool-card">
+              <h3><i class="fas fa-info-circle"></i> Información</h3>
+              <p><strong>LyxPanel</strong> v3.0</p>
+              <p>Panel de administración premium para FiveM</p>
+              <p style="color: #666; font-size: 12px; margin-top: 10px">
+                Desarrollado por Lyx
+              </p>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <!-- Player Modal -->
+    <div id="playerModal" class="modal hidden">
+      <div class="modal-overlay" onclick="closeModal()"></div>
+      <div class="modal-content modal-large">
+        <div class="modal-header">
+          <h2>
+            <i class="fas fa-user"></i>
+            <span id="modalPlayerName">Jugador</span>
+          </h2>
+          <button class="modal-close" onclick="closeModal()">
+            <i class="fas fa-times"></i>
+          </button>
+        </div>
+        <div class="modal-body">
+          <div class="modal-tabs">
+            <button class="tab-btn active" data-tab="info">Info</button>
+            <button class="tab-btn" data-tab="actions">Acciones</button>
+            <button class="tab-btn" data-tab="inventory">Inventario</button>
+            <button class="tab-btn" data-tab="notes">Notas</button>
+            <button class="tab-btn" data-tab="troll">Troll</button>
+          </div>
+          <div id="tabInfo" class="tab-content active">
+            <div class="player-info-grid" id="playerInfoGrid"></div>
+          </div>
+          <div id="tabActions" class="tab-content">
+            <div class="player-actions" id="playerActionsGrid"></div>
+          </div>
+          <div id="tabInventory" class="tab-content">
+            <div id="playerInventory" class="inventory-grid"></div>
+          </div>
+          <div id="tabNotes" class="tab-content">
+            <div id="playerNotes"></div>
+            <textarea
+              id="newNoteText"
+              placeholder="Nueva nota..."
+              class="input-full"
+            ></textarea>
+            <button class="btn btn-primary" onclick="addNote()">
+              Añadir Nota
+            </button>
+          </div>
+          <div id="tabTroll" class="tab-content">
+            <div class="troll-actions" id="trollActionsGrid"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Confirm Modal -->
+    <div id="confirmModal" class="modal hidden">
+      <div class="modal-overlay" onclick="closeConfirmModal()"></div>
+      <div class="modal-content modal-dialog">
+        <div class="modal-header modal-header-warning">
+          <h2 id="confirmModalTitle">
+            <i class="fas fa-exclamation-triangle"></i> Confirmar Acción
+          </h2>
+          <button class="close-btn" onclick="closeConfirmModal()">
+            <i class="fas fa-times"></i>
+          </button>
+        </div>
+        <div class="modal-body">
+          <p id="confirmModalMessage" class="modal-message"></p>
+          <div id="confirmModalInput" class="modal-input-group hidden">
+            <label id="confirmModalInputLabel">Ingresa valor:</label>
+            <input
+              type="text"
+              id="confirmModalInputField"
+              class="input-full"
+              placeholder=""
+            />
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" onclick="closeConfirmModal()">
+            <i class="fas fa-times"></i> Cancelar
+          </button>
+          <button
+            class="btn btn-danger"
+            id="confirmModalBtn"
+            onclick="executeConfirmAction()"
+          >
+            <i class="fas fa-check"></i> Confirmar
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Input Modal -->
+    <div id="inputModal" class="modal hidden">
+      <div class="modal-overlay" onclick="closeInputModal()"></div>
+      <div class="modal-content modal-dialog">
+        <div class="modal-header">
+          <h2 id="inputModalTitle">
+            <i class="fas fa-edit"></i> Ingresa información
+          </h2>
+          <button class="close-btn" onclick="closeInputModal()">
+            <i class="fas fa-times"></i>
+          </button>
+        </div>
+        <div class="modal-body" id="inputModalBody">
+          <p id="inputModalMessage" class="modal-message"></p>
+          <input
+            type="text"
+            id="inputModalField"
+            class="input-full"
+            placeholder=""
+          />
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" onclick="closeInputModal()">
+            <i class="fas fa-times"></i> Cancelar
+          </button>
+          <button class="btn btn-primary" onclick="executeInputAction()">
+            <i class="fas fa-check"></i> Aceptar
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Report Chat Modal -->
+    <div id="reportChatModal" class="modal hidden">
+      <div class="modal-overlay" onclick="closeReportChat()"></div>
+      <div class="modal-content modal-chat">
+        <div class="modal-header">
+          <h2>
+            <i class="fas fa-comments"></i> Chat Reporte #<span
+              id="reportChatId"
+            ></span>
+          </h2>
+          <button class="close-btn" onclick="closeReportChat()">
+            <i class="fas fa-times"></i>
+          </button>
+        </div>
+        <div class="modal-body">
+          <div id="reportChatMessages" class="chat-messages"></div>
+          <div class="chat-input">
+            <input
+              type="text"
+              id="reportChatInput"
+              placeholder="Escribe un mensaje..."
+              onkeypress="if(event.key==='Enter')sendReportChatMessage()"
+            />
+            <button class="btn btn-primary" onclick="sendReportChatMessage()">
+              <i class="fas fa-paper-plane"></i>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Command Palette -->
+    <div class="command-palette-overlay" id="commandPalette">
+      <div class="command-palette">
+        <div class="command-input-container">
+          <i class="fas fa-terminal"></i>
+          <input
+            type="text"
+            class="command-input"
+            id="commandInput"
+            placeholder="Escribe un comando o busca..."
+          />
+          <kbd>ESC</kbd>
+        </div>
+        <div class="command-results" id="commandResults">
+          <div class="command-item selected" data-action="goto-dashboard">
+            <i class="fas fa-chart-pie"></i>
+            <div class="command-item-text">
+              <div class="command-item-title">Ir a Dashboard</div>
+              <div class="command-item-desc">Ver estadísticas del servidor</div>
+            </div>
+            <div class="command-item-shortcut"><kbd>1</kbd></div>
+          </div>
+          <div class="command-item" data-action="goto-players">
+            <i class="fas fa-users"></i>
+            <div class="command-item-text">
+              <div class="command-item-title">Ir a Jugadores</div>
+              <div class="command-item-desc">
+                Gestionar jugadores conectados
+              </div>
+            </div>
+            <div class="command-item-shortcut"><kbd>2</kbd></div>
+          </div>
+          <div class="command-item" data-action="kick-all">
+            <i class="fas fa-door-open"></i>
+            <div class="command-item-text">
+              <div class="command-item-title">Kickear a todos</div>
+              <div class="command-item-desc">
+                Expulsar a todos los jugadores
+              </div>
+            </div>
+          </div>
+          <div class="command-item" data-action="toggle-godmode">
+            <i class="fas fa-heart"></i>
+            <div class="command-item-text">
+              <div class="command-item-title">Activar Godmode</div>
+              <div class="command-item-desc">Hacerse invencible</div>
+            </div>
+            <div class="command-item-shortcut"><kbd>G</kbd></div>
+          </div>
+          <div class="command-item" data-action="toggle-noclip">
+            <i class="fas fa-ghost"></i>
+            <div class="command-item-text">
+              <div class="command-item-title">Activar Noclip</div>
+              <div class="command-item-desc">Atravesar paredes y volar</div>
+            </div>
+            <div class="command-item-shortcut"><kbd>V</kbd></div>
+          </div>
+          <div class="command-item" data-action="refresh-data">
+            <i class="fas fa-sync-alt"></i>
+            <div class="command-item-text">
+              <div class="command-item-title">Actualizar datos</div>
+              <div class="command-item-desc">
+                Refrescar información del servidor
+              </div>
+            </div>
+            <div class="command-item-shortcut"><kbd>R</kbd></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Toast Notifications Container -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <script src="js/app.js"></script>
+    <script src="js/app_extended.js"></script>
+  </body>
+</html>
+

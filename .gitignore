@@ -1,0 +1,21 @@
+# OS / Editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.code-workspace
+
+# Runtime / local outputs
+logs/
+*.log
+*.jsonl
+*.tmp
+*.cache
+
+# Node (si se usa tooling local para UI)
+node_modules/
+
+# Local DB / test artifacts
+*.db
+*.sqlite
+*.sqlite3
