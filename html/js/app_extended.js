@@ -448,8 +448,8 @@
             <td>${override === null ? '<span class="badge badge-secondary">DEFAULT</span>' : boolBadge(override)}</td>
             <td>${boolBadge(effective)}</td>
             <td style="display:flex; gap:6px;">
-              <button class="btn btn-primary btn-sm" onclick="permissionsSetRole(decodeURIComponent('${permToken}'), true)">ALLOW</button>
-              <button class="btn btn-danger btn-sm" onclick="permissionsSetRole(decodeURIComponent('${permToken}'), false)">DENY</button>
+              <button class="btn btn-primary btn-sm" data-action="permissionsSetRole(decodeURIComponent('${permToken}'), true)">ALLOW</button>
+              <button class="btn btn-danger btn-sm" data-action="permissionsSetRole(decodeURIComponent('${permToken}'), false)">DENY</button>
             </td>
           </tr>
         `;
@@ -535,7 +535,7 @@
           <td>${esc(r.note || '')}</td>
           <td>${esc(r.updated_at || r.created_at || '')}</td>
           <td>
-            <button class="btn btn-danger btn-sm" onclick="accessRemove(decodeURIComponent('${idToken}'))">Quitar</button>
+            <button class="btn btn-danger btn-sm" data-action="accessRemove(decodeURIComponent('${idToken}'))">Quitar</button>
           </td>
         </tr>
       `;
@@ -804,7 +804,7 @@
       '<option value="permanent">Permanente</option>',
       '</select>',
       '</div>',
-      '<button class="btn btn-danger btn-full" onclick="submitOfflineBan()">',
+      '<button class="btn btn-danger btn-full" data-action="submitOfflineBan()">',
       '<i class="fas fa-ban"></i> Aplicar Ban</button>'
     ].join(''));
   }
@@ -838,7 +838,7 @@
       '<label>Razon</label>',
       '<input type="text" id="ipBanReason" placeholder="Motivo" class="input-full">',
       '</div>',
-      '<button class="btn btn-danger btn-full" onclick="submitIPBan()">',
+      '<button class="btn btn-danger btn-full" data-action="submitIPBan()">',
       '<i class="fas fa-shield-halved"></i> Bloquear Rango IP</button>'
     ].join(''));
   }
@@ -862,7 +862,7 @@
       '<label>Horas a reducir</label>',
       '<input type="number" id="reduceHours" value="24" min="1" max="8760" class="input-full">',
       '</div>',
-      `<button class="btn btn-primary btn-full" onclick="submitReduceBan(${Number(banId) || 0})">`,
+      `<button class="btn btn-primary btn-full" data-action="submitReduceBan(${Number(banId) || 0})">`,
       '<i class="fas fa-clock"></i> Reducir Duracion</button>'
     ].join(''));
   }
@@ -895,7 +895,7 @@
       '<label>Razon</label>',
       '<input type="text" id="jailReason" placeholder="Motivo" class="input-full">',
       '</div>',
-      '<button class="btn btn-warning btn-full" onclick="submitJail()">',
+      '<button class="btn btn-warning btn-full" data-action="submitJail()">',
       '<i class="fas fa-lock"></i> Aplicar Jail</button>'
     ].join(''));
   }
@@ -931,7 +931,7 @@
       '<label>Tiempo (minutos)</label>',
       '<input type="number" id="muteTime" value="10" min="1" max="240" class="input-full">',
       '</div>',
-      `<button class="btn btn-warning btn-full" onclick="submitMute('${muteType}')">`,
+      `<button class="btn btn-warning btn-full" data-action="submitMute('${muteType}')">`,
       '<i class="fas fa-volume-xmark"></i> Aplicar Mute</button>'
     ].join(''));
   }
@@ -1042,7 +1042,7 @@
         '</table>',
         '</div>',
         '<div style="margin-top:12px">',
-        `<button class="btn btn-danger btn-full" onclick="openOfflineBanFor('${esc(identifier)}','')">`,
+        `<button class="btn btn-danger btn-full" data-action="openOfflineBanFor('${esc(identifier)}','')">`,
         '<i class="fas fa-ban"></i> Banear Identifier</button>',
         '</div>'
       ].join('');
@@ -1068,8 +1068,8 @@
           `<span>${esc(name)}</span>`,
           `<span class="text-muted">${esc(identifier.substring(0, 24))}...</span>`,
           `<span class="text-muted">${esc(p.last_seen || 'N/A')}</span>`,
-          `<button class="btn btn-sm btn-primary" onclick="viewPlayerHistory('${esc(identifier)}')">Historial</button>`,
-          `<button class="btn btn-sm btn-danger" onclick="openOfflineBanFor('${esc(identifier)}','${esc(name)}')">Ban</button>`,
+          `<button class="btn btn-sm btn-primary" data-action="viewPlayerHistory('${esc(identifier)}')">Historial</button>`,
+          `<button class="btn btn-sm btn-danger" data-action="openOfflineBanFor('${esc(identifier)}','${esc(name)}')">Ban</button>`,
           '</div>'
         ].join('');
       }).join('') || '<p>Sin resultados</p>';
@@ -1090,7 +1090,7 @@
           `<td>${esc(identifier.substring(0, 25))}...</td>`,
           `<td>${esc(w.added_by || 'N/A')}</td>`,
           `<td>${esc(w.created_at || 'N/A')}</td>`,
-          `<td><button class="btn btn-sm btn-danger" onclick="removeFromWhitelist('${esc(identifier)}')">Eliminar</button></td>`,
+          `<td><button class="btn btn-sm btn-danger" data-action="removeFromWhitelist('${esc(identifier)}')">Eliminar</button></td>`,
           '</tr>'
         ].join('');
       }).join('');
@@ -1107,7 +1107,7 @@
       '<label>Nombre</label>',
       '<input type="text" id="wlName" placeholder="Nombre del jugador" class="input-full">',
       '</div>',
-      '<button class="btn btn-primary btn-full" onclick="submitAddWhitelist()">',
+      '<button class="btn btn-primary btn-full" data-action="submitAddWhitelist()">',
       '<i class="fas fa-user-plus"></i> Agregar</button>'
     ].join(''));
   }
@@ -1177,7 +1177,7 @@
             `<span class="vehicle-name">${esc(v.vehicle || 'UNKNOWN')}</span>`,
             `<span class="vehicle-plate badge badge-info">${esc(plate)}</span>`,
             `<span class="badge ${stored ? 'badge-success' : 'badge-warning'}">${stored ? 'Guardado' : 'Fuera'}</span>`,
-            `<button class="btn btn-sm btn-danger" onclick="deleteGarageVehicle('${esc(plate)}')">Eliminar</button>`,
+            `<button class="btn btn-sm btn-danger" data-action="deleteGarageVehicle('${esc(plate)}')">Eliminar</button>`,
             '</div>'
           ].join('');
         }).join('');
@@ -1189,7 +1189,7 @@
         '<h4>Dar Vehiculo</h4>',
         '<input type="text" id="giveVehModel" placeholder="Modelo (ej: adder)" class="input-half">',
         '<input type="text" id="giveVehPlate" placeholder="Placa (opcional)" class="input-half">',
-        '<button class="btn btn-primary btn-full" onclick="submitGiveVehicle()"><i class="fas fa-car"></i> Dar Vehiculo</button>'
+        '<button class="btn btn-primary btn-full" data-action="submitGiveVehicle()"><i class="fas fa-car"></i> Dar Vehiculo</button>'
       ].join('');
 
       openInput(`Garaje de ${esc(target.name)}`, html);
@@ -1236,7 +1236,7 @@
         html += list.map((l) => [
           '<div class="license-item">',
           `<span class="badge badge-info">${esc(l.type || 'unknown')}</span>`,
-          `<button class="btn btn-sm btn-danger" onclick="removeLicense('${esc(l.type || '')}')">Revocar</button>`,
+          `<button class="btn btn-sm btn-danger" data-action="removeLicense('${esc(l.type || '')}')">Revocar</button>`,
           '</div>'
         ].join('')).join('');
       } else {
@@ -1253,7 +1253,7 @@
         '<option value="drive_truck">Licencia Camion</option>',
         '<option value="weapon">Licencia Armas</option>',
         '</select>',
-        '<button class="btn btn-primary btn-full" onclick="submitGiveLicense()"><i class="fas fa-id-card"></i> Dar Licencia</button>'
+        '<button class="btn btn-primary btn-full" data-action="submitGiveLicense()"><i class="fas fa-id-card"></i> Dar Licencia</button>'
       ].join('');
 
       openInput(`Licencias de ${esc(target.name)}`, html);
@@ -1304,7 +1304,7 @@
       '<label>Repetir cada X min (0 = no repetir)</label>',
       '<input type="number" id="schedRepeat" value="0" min="0" max="1440" class="input-full">',
       '</div>',
-      '<button class="btn btn-primary btn-full" onclick="submitScheduleAnnounce()">',
+      '<button class="btn btn-primary btn-full" data-action="submitScheduleAnnounce()">',
       '<i class="fas fa-calendar-check"></i> Programar</button>'
     ].join(''));
   }
@@ -1565,10 +1565,10 @@
               <div class="preset-sub">${esc(meta)}</div>
             </div>
             <div class="preset-actions">
-              <button class="btn btn-sm btn-primary" onclick="applySelfPreset(${id})">
+              <button class="btn btn-sm btn-primary" data-action="applySelfPreset(${id})">
                 <i class="fas fa-play"></i> Aplicar
               </button>
-              <button class="btn btn-sm btn-danger" onclick="deleteSelfPreset(${id}, '${nameEnc}')">
+              <button class="btn btn-sm btn-danger" data-action="deleteSelfPreset(${id}, '${nameEnc}')">
                 <i class="fas fa-trash"></i>
               </button>
             </div>
@@ -1664,10 +1664,10 @@
               <div class="preset-sub">${esc(meta)}</div>
             </div>
             <div class="preset-actions">
-              <button class="btn btn-sm btn-primary" onclick="applyVehicleBuild(${id})">
+              <button class="btn btn-sm btn-primary" data-action="applyVehicleBuild(${id})">
                 <i class="fas fa-wand-magic-sparkles"></i> Aplicar
               </button>
-              <button class="btn btn-sm btn-danger" onclick="deleteVehicleBuild(${id}, '${nameEnc}')">
+              <button class="btn btn-sm btn-danger" data-action="deleteVehicleBuild(${id}, '${nameEnc}')">
                 <i class="fas fa-trash"></i>
               </button>
             </div>
@@ -1763,10 +1763,10 @@
               <div class="preset-sub">${esc(meta)}</div>
             </div>
             <div class="preset-actions">
-              <button class="btn btn-sm btn-primary" onclick="spawnFavoriteVehicle('${esc(model)}')">
+              <button class="btn btn-sm btn-primary" data-action="spawnFavoriteVehicle('${esc(model)}')">
                 <i class="fas fa-car"></i> Spawn
               </button>
-              <button class="btn btn-sm btn-danger" onclick="removeVehicleFavorite(${id}, '${labelEnc}')">
+              <button class="btn btn-sm btn-danger" data-action="removeVehicleFavorite(${id}, '${labelEnc}')">
                 <i class="fas fa-trash"></i>
               </button>
             </div>
@@ -1860,10 +1860,10 @@
               <div class="preset-sub">${esc(meta)}</div>
             </div>
             <div class="preset-actions">
-              <button class="btn btn-sm btn-primary" onclick="spawnFavoriteVehicle('${esc(model)}')">
+              <button class="btn btn-sm btn-primary" data-action="spawnFavoriteVehicle('${esc(model)}')">
                 <i class="fas fa-rotate-left"></i> Repetir
               </button>
-              <button class="btn btn-sm btn-secondary" onclick="addVehicleFavoriteFromHistory('${esc(model)}', '${favLabelEnc}')">
+              <button class="btn btn-sm btn-secondary" data-action="addVehicleFavoriteFromHistory('${esc(model)}', '${favLabelEnc}')">
                 <i class="fas fa-star"></i> Fav
               </button>
             </div>
@@ -1970,4 +1970,5 @@
 
   console.log('[LyxPanel] Extended JS loaded (v4.6)');
 })();
+
 

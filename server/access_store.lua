@@ -22,12 +22,31 @@ local function _EncodeJson(tbl)
     return ok and data or '{}'
 end
 
+local function _CanAwaitQuery()
+    return MySQL and MySQL.query and MySQL.query.await
+end
+
+local function _AwaitQuery(query, params)
+    if not _CanAwaitQuery() then return nil end
+    return MySQL.query.await(query, params or {})
+end
+
+local function _AwaitExecute(query, params)
+    if MySQL and MySQL.update and MySQL.update.await then
+        return MySQL.update.await(query, params or {})
+    end
+    if _CanAwaitQuery() then
+        return MySQL.query.await(query, params or {})
+    end
+    return nil
+end
+
 function LyxPanel.AccessStore.Reload()
-    if not MySQL or not MySQL.Sync then return false end
+    if not _CanAwaitQuery() then return false end
 
     Store.entries = {}
 
-    local rows = MySQL.Sync.fetchAll(
+    local rows = _AwaitQuery(
         'SELECT identifier, group_name, note, added_by, created_at, updated_at FROM lyxpanel_access_list',
         {}
     ) or {}
@@ -79,19 +98,19 @@ function LyxPanel.AccessStore.Set(identifier, groupName, note, actorName, actorI
     note = type(note) == 'string' and note or tostring(note or '')
 
     if identifier == '' or groupName == '' then return false, 'invalid_input' end
-    if not MySQL or not MySQL.Sync then return false, 'mysql_not_ready' end
+    if not _CanAwaitQuery() then return false, 'mysql_not_ready' end
 
     local old = Store.entries[identifier] and Store.entries[identifier].group_name or nil
 
-    MySQL.Sync.execute([[
+    _AwaitExecute([[
         INSERT INTO lyxpanel_access_list (identifier, group_name, note, added_by)
         VALUES (?, ?, ?, ?)
         ON DUPLICATE KEY UPDATE group_name = VALUES(group_name), note = VALUES(note), added_by = VALUES(added_by), updated_at = NOW()
     ]], { identifier, groupName, note ~= '' and note or nil, tostring(actorName or 'unknown') })
 
     -- Audit in panel logs for the audit tab.
-    pcall(function()
-        MySQL.Sync.execute([[
+    if MySQL and MySQL.insert then
+        MySQL.insert([[
             INSERT INTO lyxpanel_logs (admin_id, admin_name, action, target_id, target_name, details)
             VALUES (?, ?, ?, ?, ?, ?)
         ]], {
@@ -102,7 +121,19 @@ function LyxPanel.AccessStore.Set(identifier, groupName, note, actorName, actorI
             groupName,
             _EncodeJson({ note = note, old_group = old })
         })
-    end)
+    else
+        _AwaitExecute([[
+            INSERT INTO lyxpanel_logs (admin_id, admin_name, action, target_id, target_name, details)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ]], {
+            tostring(actorIdentifier or 'unknown'),
+            tostring(actorName or 'unknown'),
+            old and 'ACCESS_UPDATE' or 'ACCESS_GRANT',
+            identifier,
+            groupName,
+            _EncodeJson({ note = note, old_group = old })
+        })
+    end
 
     Store.entries[identifier] = Store.entries[identifier] or {}
     Store.entries[identifier].group_name = groupName
@@ -119,14 +150,14 @@ end
 function LyxPanel.AccessStore.Remove(identifier, actorName, actorIdentifier)
     identifier = tostring(identifier or ''):gsub('%s+', '')
     if identifier == '' then return false, 'invalid_identifier' end
-    if not MySQL or not MySQL.Sync then return false, 'mysql_not_ready' end
+    if not _CanAwaitQuery() then return false, 'mysql_not_ready' end
 
     local old = Store.entries[identifier]
 
-    MySQL.Sync.execute('DELETE FROM lyxpanel_access_list WHERE identifier = ?', { identifier })
+    _AwaitExecute('DELETE FROM lyxpanel_access_list WHERE identifier = ?', { identifier })
 
-    pcall(function()
-        MySQL.Sync.execute([[
+    if MySQL and MySQL.insert then
+        MySQL.insert([[
             INSERT INTO lyxpanel_logs (admin_id, admin_name, action, target_id, target_name, details)
             VALUES (?, ?, ?, ?, ?, ?)
         ]], {
@@ -137,11 +168,22 @@ function LyxPanel.AccessStore.Remove(identifier, actorName, actorIdentifier)
             old and old.group_name or nil,
             _EncodeJson({ old_group = old and old.group_name or nil, note = old and old.note or nil })
         })
-    end)
+    else
+        _AwaitExecute([[
+            INSERT INTO lyxpanel_logs (admin_id, admin_name, action, target_id, target_name, details)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ]], {
+            tostring(actorIdentifier or 'unknown'),
+            tostring(actorName or 'unknown'),
+            'ACCESS_REVOKE',
+            identifier,
+            old and old.group_name or nil,
+            _EncodeJson({ old_group = old and old.group_name or nil, note = old and old.note or nil })
+        })
+    end
 
     Store.entries[identifier] = nil
     return true
 end
 
 print('^2[LyxPanel]^7 access_store loaded')
-

@@ -27,6 +27,52 @@ local Settings = {
 local ReportCooldowns = {}
 
 local _ActionCooldowns = {}
+local _ReportQueryCache = {
+    pending = { value = nil, expiresAtMs = 0, ttlMs = 3000 },
+    queue = {},
+    runbooks = {}
+}
+
+local function _NowMs()
+    return GetGameTimer()
+end
+
+local function _ReadCache(entry)
+    if type(entry) ~= 'table' or entry.value == nil then
+        return nil
+    end
+    if (tonumber(entry.expiresAtMs) or 0) <= _NowMs() then
+        return nil
+    end
+    return entry.value
+end
+
+local function _WriteCache(entry, value, ttlMs)
+    if type(entry) ~= 'table' then
+        return value
+    end
+    entry.value = value
+    entry.expiresAtMs = _NowMs() + math.max(tonumber(ttlMs or entry.ttlMs) or 0, 250)
+    return value
+end
+
+local function _InvalidateReportCache(reportId)
+    _ReportQueryCache.pending.value = nil
+    _ReportQueryCache.pending.expiresAtMs = 0
+    _ReportQueryCache.queue = {}
+    if reportId then
+        _ReportQueryCache.runbooks[tostring(reportId)] = nil
+    else
+        _ReportQueryCache.runbooks = {}
+    end
+end
+
+local function _AwaitQuery(query, params)
+    if not (MySQL and MySQL.query and MySQL.query.await) then
+        return nil
+    end
+    return MySQL.query.await(query, params or {})
+end
 
 local function _IsRateLimited(src, key, cooldownMs)
     if not src or src <= 0 then return true end
@@ -67,6 +113,20 @@ local function _SanitizeText(s, maxLen)
     s = tostring(s or ''):gsub('[%c]', ''):gsub('[\r\n\t]', ' ')
     if maxLen and #s > maxLen then s = s:sub(1, maxLen) end
     return s
+end
+
+local function _IsValidDiscordWebhookUrl(url)
+    if type(url) ~= 'string' then
+        return false
+    end
+
+    url = url:match('^%s*(.-)%s*$') or ''
+    if url == '' then
+        return false
+    end
+
+    return (string.match(url, '^https://discord%.com/api/webhooks/') ~= nil) or
+        (string.match(url, '^https://discordapp%.com/api/webhooks/') ~= nil)
 end
 
 local function GetId(source, idType)
@@ -320,6 +380,7 @@ function ReportSystem.CreateReport(reporterSource, targetId, reason)
 
         -- Save to database
         ReportSystem.SaveToDatabase(report, function(dbId)
+            _InvalidateReportCache(dbId)
             if GetPlayerName(reporterSource) then
                 TriggerClientEvent('chat:addMessage', reporterSource, {
                     color = { 0, 255, 0 },
@@ -365,6 +426,8 @@ function ReportSystem.ClaimReport(adminSource, reportId)
                 TriggerClientEvent('lyxpanel:notify', adminSource, 'error', 'Reporte no encontrado o ya atendido')
                 return
             end
+
+            _InvalidateReportCache(reportId)
 
             -- Notify reporter if online
             MySQL.query('SELECT reporter_id FROM lyxpanel_reports WHERE id = ? LIMIT 1', { reportId }, function(rows)
@@ -418,6 +481,8 @@ function ReportSystem.ResolveReport(adminSource, reportId, resolution)
                 return
             end
 
+            _InvalidateReportCache(reportId)
+
             -- Notify reporter if online
             MySQL.query('SELECT reporter_id FROM lyxpanel_reports WHERE id = ? LIMIT 1', { reportId }, function(rows)
                 local rid = rows and rows[1] and rows[1].reporter_id or nil
@@ -442,7 +507,12 @@ end
 function ReportSystem.GetPendingReports()
     -- Deprecated: prefer ESX callbacks in server/main.lua (DB-backed UI).
     -- Kept for compatibility with older clients. This returns a minimal list from DB.
-    local rows = MySQL.Sync.fetchAll([[
+    local cached = _ReadCache(_ReportQueryCache.pending)
+    if cached then
+        return cached
+    end
+
+    local rows = _AwaitQuery([[
         SELECT *,
         (
             CASE priority
@@ -458,8 +528,8 @@ function ReportSystem.GetPendingReports()
         WHERE status IN ('open','in_progress')
         ORDER BY risk_score DESC, created_at ASC
         LIMIT 100
-    ]], {})
-    return rows or {}
+    ]], {}) or {}
+    return _WriteCache(_ReportQueryCache.pending, rows, _ReportQueryCache.pending.ttlMs)
 end
 
 --- Get prioritized report queue with risk score
@@ -470,7 +540,19 @@ function ReportSystem.GetReportQueue(limit)
     if limit < 1 then limit = 1 end
     if limit > 300 then limit = 300 end
 
-    local rows = MySQL.Sync.fetchAll([[
+    local cacheKey = tostring(limit)
+    local entry = _ReportQueryCache.queue[cacheKey]
+    if not entry then
+        entry = { value = nil, expiresAtMs = 0, ttlMs = 3000 }
+        _ReportQueryCache.queue[cacheKey] = entry
+    end
+
+    local cached = _ReadCache(entry)
+    if cached then
+        return cached
+    end
+
+    local rows = _AwaitQuery([[
         SELECT *,
         (
             CASE priority
@@ -486,9 +568,9 @@ function ReportSystem.GetReportQueue(limit)
         WHERE status IN ('open','in_progress')
         ORDER BY risk_score DESC, created_at ASC
         LIMIT ?
-    ]], { limit })
+    ]], { limit }) or {}
 
-    return rows or {}
+    return _WriteCache(entry, rows, entry.ttlMs)
 end
 
 --- Build moderation runbook for a report id
@@ -500,13 +582,25 @@ function ReportSystem.GetRunbook(reportId)
         return nil
     end
 
-    local rows = MySQL.Sync.fetchAll('SELECT id, priority, status, reason FROM lyxpanel_reports WHERE id = ? LIMIT 1', { reportId })
+    local cacheKey = tostring(reportId)
+    local entry = _ReportQueryCache.runbooks[cacheKey]
+    if not entry then
+        entry = { value = nil, expiresAtMs = 0, ttlMs = 10000 }
+        _ReportQueryCache.runbooks[cacheKey] = entry
+    end
+
+    local cached = _ReadCache(entry)
+    if cached then
+        return cached
+    end
+
+    local rows = _AwaitQuery('SELECT id, priority, status, reason FROM lyxpanel_reports WHERE id = ? LIMIT 1', { reportId })
     local report = rows and rows[1]
     if not report then
         return nil
     end
 
-    return _BuildRunbook(report)
+    return _WriteCache(entry, _BuildRunbook(report), entry.ttlMs)
 end
 
 --- Get moderation templates for UI/actions
@@ -546,7 +640,12 @@ end
 ---@param report table
 function ReportSystem.SendWebhook(report)
     local webhook = Config and Config.Discord and Config.Discord.webhooks and Config.Discord.webhooks.reports or ''
-    if not webhook or webhook == '' then return end
+    webhook = tostring(webhook or ''):match('^%s*(.-)%s*$') or ''
+    if webhook == '' then return end
+    if not _IsValidDiscordWebhookUrl(webhook) then
+        print('^3[LyxPanel Reports]^7 Invalid Discord webhook URL, skipping report delivery')
+        return
+    end
     
     local embed = {
         title = 'Nuevo Reporte - ' .. tostring(report.id or 'N/A'),
@@ -587,9 +686,14 @@ function ReportSystem.SendWebhook(report)
         embeds = { embed }
     })
     
-    PerformHttpRequest(webhook, function() end, 'POST', payload, {
-        ['Content-Type'] = 'application/json'
-    })
+    local ok, err = pcall(function()
+        PerformHttpRequest(webhook, function() end, 'POST', payload, {
+            ['Content-Type'] = 'application/json'
+        })
+    end)
+    if not ok then
+        print('^1[LyxPanel Reports]^7 Failed to send Discord webhook: ' .. tostring(err))
+    end
 end
 
 -- Save report to database
@@ -755,6 +859,9 @@ CreateThread(function()
         MySQL.update(sql, { escalateTo, minutes }, function(affected)
             if affected and affected > 0 and Config and Config.Debug then
                 print(('[LyxPanel][Reports] Auto-escalated %d report(s) to %s'):format(affected, escalateTo))
+            end
+            if affected and affected > 0 then
+                _InvalidateReportCache()
             end
         end)
 

@@ -189,7 +189,7 @@ end)
 
 -- Schedule announce
 RegisterNUICallback('scheduleAnnounce', function(data, cb)
-    _TriggerPanelEvent('lyxpanel:action:scheduleAnnounce', data.message, data.delay, data.repeat)
+    _TriggerPanelEvent('lyxpanel:action:scheduleAnnounce', data.message, data.delay, data["repeat"])
     cb({})
 end)
 

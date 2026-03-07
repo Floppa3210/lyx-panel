@@ -17,6 +17,11 @@ local _PanelActionSecurityState = {
     contexts = {},
 }
 local _AuditDeniedPermission
+local _JobsCache = {
+    value = nil,
+    expiresAtMs = 0,
+    ttlMs = 30000
+}
 
 local function _NowMs()
     return GetGameTimer()
@@ -27,6 +32,60 @@ local function _GetPanelSessionTtlMs()
     local ttl = fw and tonumber(fw.sessionTtlMs) or 10 * 60 * 1000
     if ttl < 30000 then ttl = 30000 end -- minimum 30s
     return ttl
+end
+
+local function _ReadJobsCache()
+    if _JobsCache.value == nil then
+        return nil
+    end
+    if (tonumber(_JobsCache.expiresAtMs) or 0) <= _NowMs() then
+        return nil
+    end
+    return _JobsCache.value
+end
+
+local function _WriteJobsCache(value)
+    _JobsCache.value = value
+    _JobsCache.expiresAtMs = _NowMs() + _JobsCache.ttlMs
+    return value
+end
+
+local function _GetJobsDataAsync(cb, forceRefresh)
+    if type(cb) ~= 'function' then return end
+
+    local cached = forceRefresh ~= true and _ReadJobsCache()
+    if cached then
+        cb(cached)
+        return
+    end
+
+    MySQL.query('SELECT * FROM jobs', {}, function(jobs)
+        jobs = jobs or {}
+
+        local result = {}
+        local pending = 0
+        for _, job in ipairs(jobs) do
+            if type(job) == 'table' and type(job.name) == 'string' and job.name ~= '' then
+                pending = pending + 1
+                MySQL.query('SELECT * FROM job_grades WHERE job_name = ? ORDER BY grade', { job.name }, function(grades)
+                    result[job.name] = {
+                        name = job.name,
+                        label = job.label,
+                        grades = grades or {}
+                    }
+
+                    pending = pending - 1
+                    if pending == 0 then
+                        cb(_WriteJobsCache(result))
+                    end
+                end)
+            end
+        end
+
+        if pending == 0 then
+            cb(_WriteJobsCache(result))
+        end
+    end)
 end
 
 local function _GetPanelActionSecurityCfg()
@@ -2313,15 +2372,7 @@ CreateThread(function()
 
     ESX.RegisterServerCallback('lyxpanel:getJobs', function(source, cb)
         if not HasPanelAccess(source) then return cb({}) end
-        MySQL.query('SELECT * FROM jobs', {}, function(jobs)
-            local result = {}
-            for _, job in ipairs(jobs or {}) do
-                local grades = MySQL.Sync.fetchAll('SELECT * FROM job_grades WHERE job_name = ? ORDER BY grade',
-                    { job.name })
-                result[job.name] = { name = job.name, label = job.label, grades = grades }
-            end
-            cb(result)
-        end)
+        _GetJobsDataAsync(cb)
     end)
 
     ESX.RegisterServerCallback('lyxpanel:getConfig', function(source, cb)

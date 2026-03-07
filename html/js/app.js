@@ -92,6 +92,213 @@ function closePanel() {
   });
 }
 
+function _splitInlineArgs(src) {
+  const args = [];
+  let current = "";
+  let quote = null;
+  let escapeNext = false;
+  let braceDepth = 0;
+  let bracketDepth = 0;
+  let parenDepth = 0;
+
+  for (let i = 0; i < src.length; i++) {
+    const ch = src[i];
+
+    if (escapeNext) {
+      current += ch;
+      escapeNext = false;
+      continue;
+    }
+
+    if (quote) {
+      current += ch;
+      if (ch === "\\") {
+        escapeNext = true;
+      } else if (ch === quote) {
+        quote = null;
+      }
+      continue;
+    }
+
+    if (ch === "'" || ch === '"') {
+      quote = ch;
+      current += ch;
+      continue;
+    }
+
+    if (ch === "{") braceDepth++;
+    else if (ch === "}") braceDepth = Math.max(0, braceDepth - 1);
+    else if (ch === "[") bracketDepth++;
+    else if (ch === "]") bracketDepth = Math.max(0, bracketDepth - 1);
+    else if (ch === "(") parenDepth++;
+    else if (ch === ")") parenDepth = Math.max(0, parenDepth - 1);
+
+    if (ch === "," && braceDepth === 0 && bracketDepth === 0 && parenDepth === 0) {
+      if (current.trim() !== "") args.push(current.trim());
+      current = "";
+      continue;
+    }
+
+    current += ch;
+  }
+
+  if (current.trim() !== "") args.push(current.trim());
+  return args;
+}
+
+function _decodeInlineString(token) {
+  const quote = token[0];
+  let inner = token.slice(1, -1);
+  inner = inner.replace(/\\\\/g, "\\");
+  if (quote === "'") {
+    inner = inner.replace(/\\'/g, "'");
+  } else {
+    inner = inner.replace(/\\"/g, '"');
+  }
+  return inner;
+}
+
+function _normalizeJsonLike(token) {
+  return token
+    .replace(/([{,]\s*)([A-Za-z_$][\w$]*)\s*:/g, '$1"$2":')
+    .replace(/'/g, '"')
+    .replace(/\bundefined\b/g, "null");
+}
+
+function _parseInlineLiteral(token, element, event) {
+  const value = String(token || "").trim();
+  if (value === "") return undefined;
+  if (value === "this") return element;
+  if (value === "event") return event;
+  if (value === "true") return true;
+  if (value === "false") return false;
+  if (value === "null") return null;
+  if (value === "undefined") return undefined;
+  if (/^[+-]?\d+(\.\d+)?$/.test(value)) return Number(value);
+
+  if (
+    (value.startsWith("'") && value.endsWith("'")) ||
+    (value.startsWith('"') && value.endsWith('"'))
+  ) {
+    return _decodeInlineString(value);
+  }
+
+  const decodeMatch = value.match(/^decodeURIComponent\(([\s\S]+)\)$/);
+  if (decodeMatch) {
+    try {
+      return decodeURIComponent(String(_parseInlineLiteral(decodeMatch[1], element, event) ?? ""));
+    } catch (_) {
+      return String(_parseInlineLiteral(decodeMatch[1], element, event) ?? "");
+    }
+  }
+
+  if (
+    (value.startsWith("{") && value.endsWith("}")) ||
+    (value.startsWith("[") && value.endsWith("]"))
+  ) {
+    try {
+      return JSON.parse(_normalizeJsonLike(value));
+    } catch (_) {
+      return value;
+    }
+  }
+
+  return value;
+}
+
+function _invokeInlineFunction(name, argsSource, element, event) {
+  const fn = window[name];
+  if (typeof fn !== "function") {
+    console.warn("[LyxPanel] UI action not found:", name);
+    return;
+  }
+
+  const args = String(argsSource || "").trim()
+    ? _splitInlineArgs(String(argsSource)).map((arg) => _parseInlineLiteral(arg, element, event))
+    : [];
+
+  return fn(...args);
+}
+
+function _runDelegatedExpression(expression, element, event) {
+  const expr = String(expression || "").trim();
+  if (!expr) return;
+
+  if (expr === "this.parentElement.remove()") {
+    if (element && element.parentElement) {
+      element.parentElement.remove();
+    }
+    return;
+  }
+
+  const keyMatch = expr.match(/^if\s*\(\s*event\.key\s*===\s*(['"])(.*?)\1\s*\)\s*([A-Za-z_$][\w$]*)\s*\(([\s\S]*)\)\s*;?\s*$/);
+  if (keyMatch) {
+    if (event && event.key === keyMatch[2]) {
+      if (typeof event.preventDefault === "function") event.preventDefault();
+      return _invokeInlineFunction(keyMatch[3], keyMatch[4], element, event);
+    }
+    return;
+  }
+
+  const windowGuardMatch = expr.match(/^if\s*\(\s*window\.([A-Za-z_$][\w$]*)\s*\)\s*\{\s*([A-Za-z_$][\w$]*)\s*\(([\s\S]*)\)\s*;?\s*\}\s*$/);
+  if (windowGuardMatch) {
+    if (window[windowGuardMatch[1]]) {
+      return _invokeInlineFunction(windowGuardMatch[2], windowGuardMatch[3], element, event);
+    }
+    return;
+  }
+
+  const textAssignmentMatch = expr.match(/^document\.getElementById\((['"])(.*?)\1\)\.textContent\s*=\s*this\.value\s*\+\s*(['"])(.*?)\3\s*;?\s*$/);
+  if (textAssignmentMatch) {
+    const target = document.getElementById(textAssignmentMatch[2]);
+    if (target) {
+      target.textContent = `${element?.value ?? ""}${textAssignmentMatch[4]}`;
+    }
+    return;
+  }
+
+  const fnMatch = expr.match(/^([A-Za-z_$][\w$]*)\s*\(([\s\S]*)\)\s*;?\s*$/);
+  if (fnMatch) {
+    return _invokeInlineFunction(fnMatch[1], fnMatch[2], element, event);
+  }
+
+  const bareMatch = expr.match(/^([A-Za-z_$][\w$]*)\s*;?\s*$/);
+  if (bareMatch) {
+    return _invokeInlineFunction(bareMatch[1], "", element, event);
+  }
+
+  console.warn("[LyxPanel] Unsupported delegated expression:", expr);
+}
+
+function _bindDelegatedPanelEvents() {
+  const listeners = [
+    { eventName: "click", attr: "data-action" },
+    { eventName: "change", attr: "data-change" },
+    { eventName: "input", attr: "data-input" },
+    { eventName: "submit", attr: "data-submit" },
+    { eventName: "keypress", attr: "data-keypress" },
+  ];
+
+  listeners.forEach(({ eventName, attr }) => {
+    document.addEventListener(eventName, (event) => {
+      const target = event.target?.closest?.(`[${attr}]`);
+      if (!target) return;
+
+      if (target.classList && target.classList.contains("command-item")) {
+        return;
+      }
+
+      if (eventName === "submit" && typeof event.preventDefault === "function") {
+        event.preventDefault();
+      }
+
+      _runDelegatedExpression(target.getAttribute(attr), target, event);
+    });
+  });
+}
+
+_bindDelegatedPanelEvents();
+
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") {
     if (!document.getElementById("playerModal").classList.contains("hidden"))
@@ -133,7 +340,7 @@ function renderPlayersTable(players) {
             <td>${esc(p.job)}</td>
             <td>$${fmt(p.money + p.bank)}</td>
             <td>${p.ping}ms</td>
-            <td><button class="btn btn-primary btn-sm" onclick="openPlayerModal(${p.id
+            <td><button class="btn btn-primary btn-sm" data-action="openPlayerModal(${p.id
       })"><i class="fas fa-eye"></i></button></td>`;
     fragment.appendChild(tr);
   });
@@ -179,20 +386,20 @@ function buildCategories() {
     if (uiConfig.customVehicles && uiConfig.customVehicles.length > 0) {
       vehCont.innerHTML += `
             <div class="category-card custom-vehicles-category">
-                <div class="category-header" onclick="toggleCategory(this)">
+                <div class="category-header" data-action="toggleCategory(this)">
                     <i class="fas fa-star"></i> Personalizados 
                     <span class="custom-vehicles-badge">${uiConfig.customVehicles.length}</span>
                     <i class="fas fa-chevron-down" style="margin-left: auto;"></i>
                 </div>
                 <div class="category-items" id="vehCatCustom">
                     <div class="custom-vehicles-search">
-                        <input type="text" id="customVehicleSearch" placeholder="Buscar vehiculo..." oninput="filterCustomVehicles()">
+                        <input type="text" id="customVehicleSearch" placeholder="Buscar vehiculo..." data-input="filterCustomVehicles()">
                     </div>
                     <div id="customVehiclesList">
                         ${uiConfig.customVehicles
           .map(
             (v) =>
-              `<div class="category-item" onclick="spawnCustomVehicle('${v.name
+              `<div class="category-item" data-action="spawnCustomVehicle('${v.name
               }')" title="Spawn: ${v.name}" data-name="${v.name.toLowerCase()}" data-label="${(v.label || v.name).toLowerCase()}">${v.label || v.name}</div>`
           )
           .join("")}
@@ -203,7 +410,7 @@ function buildCategories() {
       // Show empty state if no custom vehicles
       vehCont.innerHTML += `
             <div class="category-card custom-vehicles-category">
-                <div class="category-header" onclick="toggleCategory(this)">
+                <div class="category-header" data-action="toggleCategory(this)">
                     <i class="fas fa-star"></i> Personalizados 
                     <span class="custom-vehicles-badge">0</span>
                     <i class="fas fa-chevron-down" style="margin-left: auto;"></i>
@@ -222,14 +429,14 @@ function buildCategories() {
     uiConfig.vehicles.forEach((cat, i) => {
       vehCont.innerHTML += `
             <div class="category-card">
-                <div class="category-header" onclick="toggleCategory(this)">
+                <div class="category-header" data-action="toggleCategory(this)">
                     ${cat.category} <i class="fas fa-chevron-down"></i>
                 </div>
                 <div class="category-items" id="vehCat${i}">
                     ${cat.vehicles
           .map(
             (v) =>
-              `<div class="category-item" onclick="spawnVehicle('${v}')">${v}</div>`
+              `<div class="category-item" data-action="spawnVehicle('${v}')">${v}</div>`
           )
           .join("")}
                 </div>
@@ -243,14 +450,14 @@ function buildCategories() {
     uiConfig.weapons.forEach((cat, i) => {
       wepCont.innerHTML += `
             <div class="category-card">
-                <div class="category-header" onclick="toggleCategory(this)">
+                <div class="category-header" data-action="toggleCategory(this)">
                     ${cat.category} <i class="fas fa-chevron-down"></i>
                 </div>
                 <div class="category-items" id="wepCat${i}">
                     ${cat.items
           .map(
             (w) =>
-              `<div class="category-item" onclick="giveWeaponSelf('${w.name}')">${w.label}</div>`
+              `<div class="category-item" data-action="giveWeaponSelf('${w.name}')">${w.label}</div>`
           )
           .join("")}
                 </div>
@@ -278,7 +485,7 @@ function buildWorld() {
     sp.innerHTML = uiConfig.spawnPoints
       .map(
         (p) =>
-          `<button class="spawn-point-btn" onclick="teleportTo(${p.x}, ${p.y}, ${p.z})">${p.name}</button>`
+          `<button class="spawn-point-btn" data-action="teleportTo(${p.x}, ${p.y}, ${p.z})">${p.name}</button>`
       )
       .join("");
   }
@@ -288,7 +495,7 @@ function buildWorld() {
     th.innerHTML = uiConfig.themes
       .map(
         (t) =>
-          `<button class="theme-btn" style="background:${t.bg};color:${t.primary}" onclick="setTheme('${t.id}')">${t.name}</button>`
+          `<button class="theme-btn" style="background:${t.bg};color:${t.primary}" data-action="setTheme('${t.id}')">${t.name}</button>`
       )
       .join("");
   }
@@ -349,103 +556,103 @@ function openPlayerModal(id) {
       // Actions tab
       document.getElementById("playerActionsGrid").innerHTML = `
             ${perm("canGoto")
-          ? `<button class="player-action-btn" onclick="act('teleportTo')"><i class="fas fa-location-arrow"></i>Ir a</button>`
+          ? `<button class="player-action-btn" data-action="act('teleportTo')"><i class="fas fa-location-arrow"></i>Ir a</button>`
           : ""
         }
             ${perm("canBring")
-          ? `<button class="player-action-btn" onclick="act('bring')"><i class="fas fa-user-plus"></i>Traer</button>`
+          ? `<button class="player-action-btn" data-action="act('bring')"><i class="fas fa-user-plus"></i>Traer</button>`
           : ""
         }
             ${perm("canHeal")
-          ? `<button class="player-action-btn success" onclick="act('heal')"><i class="fas fa-heart"></i>Curar</button>`
+          ? `<button class="player-action-btn success" data-action="act('heal')"><i class="fas fa-heart"></i>Curar</button>`
           : ""
         }
             ${perm("canRevive")
-          ? `<button class="player-action-btn success" onclick="act('revive')"><i class="fas fa-star-of-life"></i>Revivir</button>`
+          ? `<button class="player-action-btn success" data-action="act('revive')"><i class="fas fa-star-of-life"></i>Revivir</button>`
           : ""
         }
             ${perm("canGiveArmor")
-          ? `<button class="player-action-btn" onclick="openArmorInput()"><i class="fas fa-shield"></i>Armadura</button>`
+          ? `<button class="player-action-btn" data-action="openArmorInput()"><i class="fas fa-shield"></i>Armadura</button>`
           : ""
         }
             ${perm("canGiveMoney")
-          ? `<button class="player-action-btn" onclick="openMoneyInput()"><i class="fas fa-dollar-sign"></i>Dar $</button>`
+          ? `<button class="player-action-btn" data-action="openMoneyInput()"><i class="fas fa-dollar-sign"></i>Dar $</button>`
           : ""
         }
             ${perm("canGiveWeapons")
-          ? `<button class="player-action-btn" onclick="openWeaponInput()"><i class="fas fa-gun"></i>Dar Arma</button>`
+          ? `<button class="player-action-btn" data-action="openWeaponInput()"><i class="fas fa-gun"></i>Dar Arma</button>`
           : ""
         }
             ${perm("canGiveWeapons")
-          ? `<button class="player-action-btn" onclick="openAmmoInput()"><i class="fas fa-bullseye"></i>Dar Balas</button>`
+          ? `<button class="player-action-btn" data-action="openAmmoInput()"><i class="fas fa-bullseye"></i>Dar Balas</button>`
           : ""
         }
             ${perm("canSpawnVehicles")
-          ? `<button class="player-action-btn" onclick="openVehicleInput()"><i class="fas fa-car"></i>Vehiculo</button>`
+          ? `<button class="player-action-btn" data-action="openVehicleInput()"><i class="fas fa-car"></i>Vehiculo</button>`
           : ""
         }
             ${perm("canSetJob")
-          ? `<button class="player-action-btn" onclick="openJobInput()"><i class="fas fa-briefcase"></i>Trabajo</button>`
+          ? `<button class="player-action-btn" data-action="openJobInput()"><i class="fas fa-briefcase"></i>Trabajo</button>`
           : ""
         }
             ${perm("canGiveItems")
-          ? `<button class="player-action-btn" onclick="openItemInput()"><i class="fas fa-box"></i>Item</button>`
+          ? `<button class="player-action-btn" data-action="openItemInput()"><i class="fas fa-box"></i>Item</button>`
           : ""
         }
             ${perm("canFreeze")
-          ? `<button class="player-action-btn warning" onclick="act('freeze', true)"><i class="fas fa-snowflake"></i>Freeze</button>`
+          ? `<button class="player-action-btn warning" data-action="act('freeze', true)"><i class="fas fa-snowflake"></i>Freeze</button>`
           : ""
         }
             ${perm("canFreeze")
-          ? `<button class="player-action-btn" onclick="act('freeze', false)"><i class="fas fa-fire"></i>Unfreeze</button>`
+          ? `<button class="player-action-btn" data-action="act('freeze', false)"><i class="fas fa-fire"></i>Unfreeze</button>`
           : ""
         }
             ${perm("canSpectate")
-          ? `<button class="player-action-btn" onclick="act('spectate')"><i class="fas fa-binoculars"></i>Spectate</button>`
+          ? `<button class="player-action-btn" data-action="act('spectate')"><i class="fas fa-binoculars"></i>Spectate</button>`
           : ""
         }
             ${perm("canScreenshot")
-          ? `<button class="player-action-btn" onclick="act('screenshot')"><i class="fas fa-camera"></i>Screenshot</button>`
+          ? `<button class="player-action-btn" data-action="act('screenshot')"><i class="fas fa-camera"></i>Screenshot</button>`
           : ""
         }
             ${perm("canKill")
-          ? `<button class="player-action-btn warning" onclick="act('kill')"><i class="fas fa-skull"></i>Kill</button>`
+          ? `<button class="player-action-btn warning" data-action="act('kill')"><i class="fas fa-skull"></i>Kill</button>`
           : ""
         }
             ${perm("canSlap")
-          ? `<button class="player-action-btn warning" onclick="act('slap')"><i class="fas fa-hand-back-fist"></i>Slap</button>`
+          ? `<button class="player-action-btn warning" data-action="act('slap')"><i class="fas fa-hand-back-fist"></i>Slap</button>`
           : ""
         }
             ${perm("canClearInventory")
-          ? `<button class="player-action-btn warning" onclick="act('clearInventory')"><i class="fas fa-trash"></i>Limpiar Inv</button>`
+          ? `<button class="player-action-btn warning" data-action="act('clearInventory')"><i class="fas fa-trash"></i>Limpiar Inv</button>`
           : ""
         }
             ${perm("canRemoveWeapons")
-          ? `<button class="player-action-btn warning" onclick="act('removeAllWeapons')"><i class="fas fa-gun"></i>Quitar Armas</button>`
+          ? `<button class="player-action-btn warning" data-action="act('removeAllWeapons')"><i class="fas fa-gun"></i>Quitar Armas</button>`
           : ""
         }
             ${perm("canWarn")
-          ? `<button class="player-action-btn warning" onclick="openWarnInput()"><i class="fas fa-exclamation-triangle"></i>Warn</button>`
+          ? `<button class="player-action-btn warning" data-action="openWarnInput()"><i class="fas fa-exclamation-triangle"></i>Warn</button>`
           : ""
         }
             ${perm("canKick")
-          ? `<button class="player-action-btn danger" onclick="openKickInput()"><i class="fas fa-door-open"></i>Kick</button>`
+          ? `<button class="player-action-btn danger" data-action="openKickInput()"><i class="fas fa-door-open"></i>Kick</button>`
           : ""
         }
             ${perm("canBan")
-          ? `<button class="player-action-btn danger" onclick="openBanInput()"><i class="fas fa-ban"></i>Ban</button>`
+          ? `<button class="player-action-btn danger" data-action="openBanInput()"><i class="fas fa-ban"></i>Ban</button>`
           : ""
         }
             ${perm("canKick")
-          ? `<button class="player-action-btn warning" onclick="openAdminJailInput()"><i class="fas fa-lock"></i>Admin Jail</button>`
+          ? `<button class="player-action-btn warning" data-action="openAdminJailInput()"><i class="fas fa-lock"></i>Admin Jail</button>`
           : ""
         }
             ${perm("canSetModel")
-          ? `<button class="player-action-btn warning" onclick="act('clearPed')"><i class="fas fa-user-slash"></i>Clear Ped</button>`
+          ? `<button class="player-action-btn warning" data-action="act('clearPed')"><i class="fas fa-user-slash"></i>Clear Ped</button>`
           : ""
         }
             ${perm("canBan")
-          ? `<button class="player-action-btn danger" onclick="confirmWipePlayer()"><i class="fas fa-trash-can"></i>Wipe Data</button>`
+          ? `<button class="player-action-btn danger" data-action="confirmWipePlayer()"><i class="fas fa-trash-can"></i>Wipe Data</button>`
           : ""
         }
         `;
@@ -904,7 +1111,7 @@ function showVehicleColorPicker() {
       <label>Color Secundario (0-160)</label>
       <input type="number" id="inpVehSecondaryColor" value="0" min="0" max="160" class="input-full">
     </div>
-    <button class="btn btn-primary btn-full" onclick="submitVehicleColor()">Aplicar Color</button>`
+    <button class="btn btn-primary btn-full" data-action="submitVehicleColor()">Aplicar Color</button>`
   );
 }
 
@@ -1104,7 +1311,7 @@ function openInputModal(title, html) {
 function openMoneyInput() {
   openInputModal(
     "Dar Dinero",
-    `<select id="inpAccount" class="input-full"><option value="money">Efectivo</option><option value="bank">Banco</option><option value="black_money">Negro</option></select><input type="number" id="inpAmount" placeholder="Cantidad" class="input-full"><button class="btn btn-primary btn-full" onclick="submitMoney()">Dar</button>`
+    `<select id="inpAccount" class="input-full"><option value="money">Efectivo</option><option value="bank">Banco</option><option value="black_money">Negro</option></select><input type="number" id="inpAmount" placeholder="Cantidad" class="input-full"><button class="btn btn-primary btn-full" data-action="submitMoney()">Dar</button>`
   );
 }
 function submitMoney() {
@@ -1120,7 +1327,7 @@ function submitMoney() {
 function openWeaponInput() {
   openInputModal(
     "Dar Arma",
-    `<input type="text" id="inpWeapon" placeholder="WEAPON_PISTOL" class="input-full"><input type="number" id="inpAmmo" value="250" placeholder="Cantidad de balas" class="input-full"><button class="btn btn-primary btn-full" onclick="submitWeapon()">Dar Arma</button>`
+    `<input type="text" id="inpWeapon" placeholder="WEAPON_PISTOL" class="input-full"><input type="number" id="inpAmmo" value="250" placeholder="Cantidad de balas" class="input-full"><button class="btn btn-primary btn-full" data-action="submitWeapon()">Dar Arma</button>`
   );
 }
 function submitWeapon() {
@@ -1136,7 +1343,7 @@ function submitWeapon() {
 function openAmmoInput() {
   openInputModal(
     "Dar Municion",
-    `<input type="text" id="inpAmmoWeapon" placeholder="WEAPON_PISTOL" class="input-full"><input type="number" id="inpAmmoCount" value="250" placeholder="Cantidad de balas" class="input-full"><button class="btn btn-primary btn-full" onclick="submitAmmo()"><i class="fas fa-bullseye"></i> Dar Balas</button>`
+    `<input type="text" id="inpAmmoWeapon" placeholder="WEAPON_PISTOL" class="input-full"><input type="number" id="inpAmmoCount" value="250" placeholder="Cantidad de balas" class="input-full"><button class="btn btn-primary btn-full" data-action="submitAmmo()"><i class="fas fa-bullseye"></i> Dar Balas</button>`
   );
 }
 function submitAmmo() {
@@ -1153,7 +1360,7 @@ function submitAmmo() {
 function openVehicleInput() {
   openInputModal(
     "Spawn Vehiculo",
-    `<input type="text" id="inpVehicle" placeholder="adder" class="input-full"><button class="btn btn-primary btn-full" onclick="submitVehicle()">Spawn</button>`
+    `<input type="text" id="inpVehicle" placeholder="adder" class="input-full"><button class="btn btn-primary btn-full" data-action="submitVehicle()">Spawn</button>`
   );
 }
 function submitVehicle() {
@@ -1168,7 +1375,7 @@ function submitVehicle() {
 function openJobInput() {
   openInputModal(
     "Asignar Trabajo",
-    `<input type="text" id="inpJob" placeholder="police" class="input-full"><input type="number" id="inpGrade" value="0" class="input-full"><button class="btn btn-primary btn-full" onclick="submitJob()">Asignar</button>`
+    `<input type="text" id="inpJob" placeholder="police" class="input-full"><input type="number" id="inpGrade" value="0" class="input-full"><button class="btn btn-primary btn-full" data-action="submitJob()">Asignar</button>`
   );
 }
 function submitJob() {
@@ -1184,7 +1391,7 @@ function submitJob() {
 function openItemInput() {
   openInputModal(
     "Dar Item",
-    `<input type="text" id="inpItem" placeholder="bread" class="input-full"><input type="number" id="inpCount" value="1" class="input-full"><button class="btn btn-primary btn-full" onclick="submitItem()">Dar</button>`
+    `<input type="text" id="inpItem" placeholder="bread" class="input-full"><input type="number" id="inpCount" value="1" class="input-full"><button class="btn btn-primary btn-full" data-action="submitItem()">Dar</button>`
   );
 }
 function submitItem() {
@@ -1200,7 +1407,7 @@ function submitItem() {
 function openArmorInput() {
   openInputModal(
     "Armadura",
-    `<input type="number" id="inpArmor" value="100" min="0" max="100" class="input-full"><button class="btn btn-primary btn-full" onclick="submitArmor()">Establecer</button>`
+    `<input type="number" id="inpArmor" value="100" min="0" max="100" class="input-full"><button class="btn btn-primary btn-full" data-action="submitArmor()">Establecer</button>`
   );
 }
 function submitArmor() {
@@ -1215,7 +1422,7 @@ function submitArmor() {
 function openWarnInput() {
   openInputModal(
     "Advertir",
-    `<input type="text" id="inpReason" placeholder="Razon" class="input-full"><button class="btn btn-primary btn-full" onclick="submitWarn()">Advertir</button>`
+    `<input type="text" id="inpReason" placeholder="Razon" class="input-full"><button class="btn btn-primary btn-full" data-action="submitWarn()">Advertir</button>`
   );
 }
 function submitWarn() {
@@ -1230,7 +1437,7 @@ function submitWarn() {
 function openKickInput() {
   openInputModal(
     "Expulsar",
-    `<input type="text" id="inpReason" placeholder="Razon" class="input-full"><button class="btn btn-danger btn-full" onclick="submitKick()">Expulsar</button>`
+    `<input type="text" id="inpReason" placeholder="Razon" class="input-full"><button class="btn btn-danger btn-full" data-action="submitKick()">Expulsar</button>`
   );
 }
 function submitKick() {
@@ -1248,7 +1455,7 @@ function openBanInput() {
     "Banear",
     `
         <input type="text" id="inpReason" placeholder="Razon" class="input-full">
-        <select id="inpDuration" class="input-full" onchange="toggleCustomDuration()">
+        <select id="inpDuration" class="input-full" data-change="toggleCustomDuration()">
             <option value="short">1 Hora</option>
             <option value="medium">1 Dia</option>
             <option value="long">1 Semana</option>
@@ -1259,7 +1466,7 @@ function openBanInput() {
         <div id="customDurationDiv" class="hidden" style="margin-top:8px">
             <input type="number" id="inpCustomHours" placeholder="Horas" class="input-full" min="1">
         </div>
-        <button class="btn btn-danger btn-full" onclick="submitBan()">Banear</button>
+        <button class="btn btn-danger btn-full" data-action="submitBan()">Banear</button>
     `
   );
 }
@@ -1292,7 +1499,7 @@ function submitBan() {
 function openAnnounce() {
   openInputModal(
     "Anuncio Global",
-    `<input type="text" id="inpMsg" placeholder="Mensaje" class="input-full"><button class="btn btn-primary btn-full" onclick="submitAnnounce()">Enviar</button>`
+    `<input type="text" id="inpMsg" placeholder="Mensaje" class="input-full"><button class="btn btn-primary btn-full" data-action="submitAnnounce()">Enviar</button>`
   );
 }
 function submitAnnounce() {
@@ -1306,7 +1513,7 @@ function submitAnnounce() {
 function openAdminChat() {
   openInputModal(
     "Admin Chat",
-    `<input type="text" id="inpChatMsg" placeholder="Mensaje" class="input-full"><button class="btn btn-primary btn-full" onclick="submitAdminChat()">Enviar</button>`
+    `<input type="text" id="inpChatMsg" placeholder="Mensaje" class="input-full"><button class="btn btn-primary btn-full" data-action="submitAdminChat()">Enviar</button>`
   );
 }
 function submitAdminChat() {
@@ -1360,7 +1567,7 @@ function loadBans() {
             b.ban_date || "N/A"
           )}</td><td>${esc(expiresAt)}</td><td>${b.active
             ? identifier
-              ? `<button class="btn btn-sm btn-primary" onclick="unban('${unbanToken}')">Unban</button>`
+              ? `<button class="btn btn-sm btn-primary" data-action="unban('${unbanToken}')">Unban</button>`
               : '<span class="badge badge-warning">Sin ID</span>'
             : '<span class="badge badge-success">Inactivo</span>'
           }</td></tr>`;
@@ -1394,7 +1601,7 @@ function openUnbanModal() {
       <label>Motivo</label>
       <input type="text" id="unbanReasonInput" value="Unban manual" class="input-full">
     </div>
-    <button class="btn btn-primary btn-full" onclick="submitUnbanModal()">Desbanear</button>`
+    <button class="btn btn-primary btn-full" data-action="submitUnbanModal()">Desbanear</button>`
   );
 }
 
@@ -1808,7 +2015,7 @@ function buildTrollActions() {
   grid.innerHTML = trollActions
     .map(
       (t) =>
-        `<button class="player-action-btn troll" onclick="trollAction('${t.id}')">
+        `<button class="player-action-btn troll" data-action="trollAction('${t.id}')">
             <i class="fas fa-${t.icon}"></i>${t.label}
             ${t.input ? '<small class="muted">Configurable</small>' : ''}
         </button>`
@@ -1882,13 +2089,13 @@ function loadReports() {
                 <td>
                     ${r.status !== "closed"
               ? `
-                        <button class="btn btn-sm btn-info" onclick="tpToReporter('${r.reporter_id
+                        <button class="btn btn-sm btn-info" data-action="tpToReporter('${r.reporter_id
               }')" title="TP al reporter"><i class="fas fa-location-arrow"></i></button>
-                        <button class="btn btn-sm btn-secondary" onclick="openReportChat(${r.id
+                        <button class="btn btn-sm btn-secondary" data-action="openReportChat(${r.id
               }, '${esc(
                 r.reporter_name
               )}')" title="Chat"><i class="fas fa-comment"></i></button>
-                        <button class="btn btn-sm btn-success" onclick="closeReport(${r.id
+                        <button class="btn btn-sm btn-success" data-action="closeReport(${r.id
               })"><i class="fas fa-check"></i></button>
                     `
               : ""
@@ -2030,7 +2237,7 @@ function loadWhitelist() {
                 <td>${esc(w.identifier)}</td>
                 <td>${esc(w.added_by)}</td>
                 <td>${w.created_at}</td>
-                <td><button class="btn btn-sm btn-danger" onclick="removeWhitelist(${w.id
+                <td><button class="btn btn-sm btn-danger" data-action="removeWhitelist(${w.id
             })"><i class="fas fa-trash"></i></button></td>
             </tr>`
         )
@@ -2172,7 +2379,7 @@ const Toast = {
         <div class="toast-title">${title}</div>
         <div class="toast-message">${message}</div>
       </div>
-      <button class="toast-close" onclick="this.parentElement.remove()">
+      <button class="toast-close" data-action="this.parentElement.remove()">
         <i class="fas fa-times"></i>
       </button>
       <div class="toast-progress"></div>
@@ -2691,7 +2898,7 @@ function confirmWipePlayer() {
         </div>
       </div>
       <div class="modal-footer">
-        <button class="btn btn-secondary" onclick="closeWipeModal()">Cancelar</button>
+        <button class="btn btn-secondary" data-action="closeWipeModal()">Cancelar</button>
       </div>
     </div>
   `;
@@ -2804,7 +3011,7 @@ function openZoneCleanup() {
     <div class="modal-content modal-small">
       <div class="modal-header">
         <h2><i class="fas fa-broom"></i> Limpiar Zona</h2>
-        <button class="modal-close" onclick="closeZoneModal()">&times;</button>
+        <button class="modal-close" data-action="closeZoneModal()">&times;</button>
       </div>
       <div class="modal-body">
         <div style="margin-bottom: 15px;">
@@ -2826,7 +3033,7 @@ function openZoneCleanup() {
             <input type="checkbox" id="cleanObjects"> Eliminar Objetos
           </label>
         </div>
-        <button class="btn btn-danger btn-full" onclick="executeZoneCleanup()">
+        <button class="btn btn-danger btn-full" data-action="executeZoneCleanup()">
           <i class="fas fa-trash"></i> Limpiar Zona
         </button>
       </div>
@@ -2861,10 +3068,10 @@ function openWarpsManager() {
         <div class="warp-item" style="display:flex; justify-content:space-between; padding:8px; background:rgba(0,0,0,0.3); border-radius:6px; margin-bottom:6px;">
           <span>${esc(w.name)}</span>
           <div>
-            <button class="btn btn-sm btn-primary" onclick="teleportToWarp('${esc(w.name)}')">
+            <button class="btn btn-sm btn-primary" data-action="teleportToWarp('${esc(w.name)}')">
               <i class="fas fa-location-arrow"></i>
             </button>
-            <button class="btn btn-sm btn-danger" onclick="deleteWarp('${esc(w.name)}')">
+            <button class="btn btn-sm btn-danger" data-action="deleteWarp('${esc(w.name)}')">
               <i class="fas fa-trash"></i>
             </button>
           </div>
@@ -2881,13 +3088,13 @@ function openWarpsManager() {
       <div class="modal-content">
         <div class="modal-header">
           <h2><i class="fas fa-bookmark"></i> Warps Guardados</h2>
-          <button class="modal-close" onclick="closeWarpsModal()">&times;</button>
+          <button class="modal-close" data-action="closeWarpsModal()">&times;</button>
         </div>
         <div class="modal-body">
           <div style="margin-bottom: 15px;">
             <div style="display:flex;gap:10px;">
               <input type="text" id="newWarpName" placeholder="Nombre del warp" class="input-full" style="flex:1;">
-              <button class="btn btn-primary" onclick="saveCurrentWarp()">
+              <button class="btn btn-primary" data-action="saveCurrentWarp()">
                 <i class="fas fa-plus"></i> Guardar Posicion
               </button>
             </div>
@@ -3142,7 +3349,7 @@ function showTeleportFavorites() {
     if (teleportFavorites.defaults && teleportFavorites.defaults.length > 0) {
       html += '<h4>Predeterminados</h4><div class="favorites-grid">';
       teleportFavorites.defaults.forEach(loc => {
-        html += `<button class="btn btn-secondary" onclick="teleportToFavorite(${JSON.stringify(loc).replace(/"/g, '&quot;')})">${loc.name}</button>`;
+        html += `<button class="btn btn-secondary" data-action="teleportToFavorite(${JSON.stringify(loc).replace(/"/g, '&quot;')})">${loc.name}</button>`;
       });
       html += '</div>';
     }
@@ -3153,8 +3360,8 @@ function showTeleportFavorites() {
       teleportFavorites.custom.forEach(loc => {
         html += `<div class="favorite-item">
           <span>${loc.name}</span>
-          <button class="btn btn-sm btn-primary" onclick="teleportToFavorite({x:${loc.x},y:${loc.y},z:${loc.z},name:'${loc.name}'})">Ir</button>
-          <button class="btn btn-sm btn-danger" onclick="deleteTeleportFavorite(${loc.id})">&times;</button>
+          <button class="btn btn-sm btn-primary" data-action="teleportToFavorite({x:${loc.x},y:${loc.y},z:${loc.z},name:'${loc.name}'})">Ir</button>
+          <button class="btn btn-sm btn-danger" data-action="deleteTeleportFavorite(${loc.id})">&times;</button>
         </div>`;
       });
       html += '</div>';
@@ -3163,7 +3370,7 @@ function showTeleportFavorites() {
     // Add new
     html += `<div class="add-favorite-section">
       <input type="text" id="newFavoriteName" placeholder="Nombre de la ubicacion" class="form-input">
-      <button class="btn btn-success" onclick="saveCurrentPosition()">Guardar Posicion Actual</button>
+      <button class="btn btn-success" data-action="saveCurrentPosition()">Guardar Posicion Actual</button>
     </div>`;
     
     html += '</div>';
@@ -3204,7 +3411,7 @@ function teleportPlayerToPlayer() {
   showInputModal('Teleport Jugador a Jugador', 
     `<p>Teleportar jugador seleccionado (${selectedPlayer.name}) hacia otro jugador</p>
     <select id="targetPlayer2" class="form-select">${generatePlayerOptions()}</select>
-    <button class="btn btn-primary btn-full" onclick="executePlayerToPlayer()">Teleportar</button>`
+    <button class="btn btn-primary btn-full" data-action="executePlayerToPlayer()">Teleportar</button>`
   );
 }
 
@@ -3250,7 +3457,7 @@ function showWeaponKitsModal() {
     
     weaponKits.forEach(kit => {
       const weaponCount = kit.weapons ? kit.weapons.length : 0;
-      html += `<div class="kit-card" onclick="giveWeaponKit('${kit.id}')">
+      html += `<div class="kit-card" data-action="giveWeaponKit('${kit.id}')">
         <h4>${kit.name}</h4>
         <p>${kit.description || ''}</p>
         <span class="kit-count">${weaponCount} armas</span>
@@ -3279,7 +3486,7 @@ function showEditBanModal(banId, currentReason, currentDuration) {
       <input type="text" id="editBanReason" value="${currentReason || ''}" class="form-input">
       <label>Duracion (horas, 0 = permanente):</label>
       <input type="number" id="editBanDuration" value="${currentDuration || 24}" class="form-input">
-      <button class="btn btn-primary btn-full" onclick="submitEditBan(${banId})">Guardar Cambios</button>
+      <button class="btn btn-primary btn-full" data-action="submitEditBan(${banId})">Guardar Cambios</button>
     </div>
   `);
 }
@@ -3319,7 +3526,7 @@ function showImportBansModal() {
     <div class="import-bans-form">
       <p>Pega el contenido JSON de los bans a importar:</p>
       <textarea id="importBansData" class="form-textarea" rows="10" placeholder='[{"identifier":"license:xxx","reason":"...","permanent":false}]'></textarea>
-      <button class="btn btn-warning btn-full" onclick="submitImportBans()">Importar Bans</button>
+      <button class="btn btn-warning btn-full" data-action="submitImportBans()">Importar Bans</button>
     </div>
   `);
 }
@@ -3377,9 +3584,9 @@ function setTargetFuel() {
   }
   showInputModal('Establecer Combustible', `
     <label>Nivel de combustible (0-100):</label>
-    <input type="range" id="fuelLevel" min="0" max="100" value="100" oninput="document.getElementById('fuelDisplay').textContent = this.value + '%'">
+    <input type="range" id="fuelLevel" min="0" max="100" value="100" data-input="document.getElementById('fuelDisplay').textContent = this.value + '%'">
     <span id="fuelDisplay">100%</span>
-    <button class="btn btn-primary btn-full" onclick="submitSetFuel()">Aplicar</button>
+    <button class="btn btn-primary btn-full" data-action="submitSetFuel()">Aplicar</button>
   `);
 }
 
@@ -3423,7 +3630,7 @@ function sendReportMessage(reportId, targetId) {
   showInputModal('Mensaje Privado', `
     <label>Mensaje al jugador:</label>
     <textarea id="reportMessage" class="form-textarea" rows="3" placeholder="Escribe tu mensaje..."></textarea>
-    <button class="btn btn-primary btn-full" onclick="submitReportMessage(${reportId}, ${targetId})">Enviar</button>
+    <button class="btn btn-primary btn-full" data-action="submitReportMessage(${reportId}, ${targetId})">Enviar</button>
   `);
 }
 
@@ -3450,10 +3657,10 @@ async function showAdminRankings(period = 'week') {
     let html = '<div class="admin-rankings">';
     html += '<h3>Ranking de Administradores</h3>';
     html += `<div class="period-selector">
-      <button class="btn ${period === 'day' ? 'btn-primary' : 'btn-secondary'}" onclick="showAdminRankings('day')">Hoy</button>
-      <button class="btn ${period === 'week' ? 'btn-primary' : 'btn-secondary'}" onclick="showAdminRankings('week')">Semana</button>
-      <button class="btn ${period === 'month' ? 'btn-primary' : 'btn-secondary'}" onclick="showAdminRankings('month')">Mes</button>
-      <button class="btn ${period === 'all' ? 'btn-primary' : 'btn-secondary'}" onclick="showAdminRankings('all')">Todo</button>
+      <button class="btn ${period === 'day' ? 'btn-primary' : 'btn-secondary'}" data-action="showAdminRankings('day')">Hoy</button>
+      <button class="btn ${period === 'week' ? 'btn-primary' : 'btn-secondary'}" data-action="showAdminRankings('week')">Semana</button>
+      <button class="btn ${period === 'month' ? 'btn-primary' : 'btn-secondary'}" data-action="showAdminRankings('month')">Mes</button>
+      <button class="btn ${period === 'all' ? 'btn-primary' : 'btn-secondary'}" data-action="showAdminRankings('all')">Todo</button>
     </div>`;
     
     if (rankings && rankings.length > 0) {
@@ -3492,7 +3699,7 @@ async function showOutfitsModal() {
     // Save current outfit
     html += `<div class="save-outfit-section">
       <input type="text" id="newOutfitName" placeholder="Nombre del outfit" class="form-input">
-      <button class="btn btn-success" onclick="saveCurrentOutfit()">Guardar Outfit Actual</button>
+      <button class="btn btn-success" data-action="saveCurrentOutfit()">Guardar Outfit Actual</button>
     </div>`;
     
     if (outfits && outfits.length > 0) {
@@ -3501,8 +3708,8 @@ async function showOutfitsModal() {
         html += `<div class="outfit-item">
           <span>${outfit.outfit_name}</span>
           <div class="outfit-actions">
-            <button class="btn btn-sm btn-primary" onclick="loadOutfit(${outfit.id})">Cargar</button>
-            <button class="btn btn-sm btn-danger" onclick="deleteOutfit(${outfit.id})">&times;</button>
+            <button class="btn btn-sm btn-primary" data-action="loadOutfit(${outfit.id})">Cargar</button>
+            <button class="btn btn-sm btn-danger" data-action="deleteOutfit(${outfit.id})">&times;</button>
           </div>
         </div>`;
       });
@@ -3571,6 +3778,7 @@ document.addEventListener('DOMContentLoaded', () => {
   Toast.init();
   console.log('[LyxPanel] v4.5 complete edition loaded - 50+ new features');
 });
+
 
 
 

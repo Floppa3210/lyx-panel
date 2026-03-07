@@ -31,13 +31,32 @@ local function _EncodeJson(tbl)
     return ok and data or '{}'
 end
 
+local function _CanAwaitQuery()
+    return MySQL and MySQL.query and MySQL.query.await
+end
+
+local function _AwaitQuery(query, params)
+    if not _CanAwaitQuery() then return nil end
+    return MySQL.query.await(query, params or {})
+end
+
+local function _AwaitExecute(query, params)
+    if MySQL and MySQL.update and MySQL.update.await then
+        return MySQL.update.await(query, params or {})
+    end
+    if _CanAwaitQuery() then
+        return MySQL.query.await(query, params or {})
+    end
+    return nil
+end
+
 function LyxPanel.PermissionsStore.Reload()
-    if not MySQL or not MySQL.Sync then return false end
+    if not _CanAwaitQuery() then return false end
 
     Store.roleOverrides = {}
     Store.individualOverrides = {}
 
-    local roles = MySQL.Sync.fetchAll('SELECT role_name, permissions, updated_by, updated_at FROM lyxpanel_role_permissions', {}) or {}
+    local roles = _AwaitQuery('SELECT role_name, permissions, updated_by, updated_at FROM lyxpanel_role_permissions', {}) or {}
     for _, r in ipairs(roles) do
         local role = tostring(r.role_name or '')
         if role ~= '' then
@@ -49,7 +68,7 @@ function LyxPanel.PermissionsStore.Reload()
         end
     end
 
-    local rows = MySQL.Sync.fetchAll('SELECT identifier, permission_name, value FROM lyxpanel_individual_permissions', {}) or {}
+    local rows = _AwaitQuery('SELECT identifier, permission_name, value FROM lyxpanel_individual_permissions', {}) or {}
     for _, row in ipairs(rows) do
         local identifier = tostring(row.identifier or '')
         local perm = tostring(row.permission_name or '')
@@ -84,24 +103,39 @@ function LyxPanel.PermissionsStore.SetRolePermission(role, perm, value, actorNam
     local old = current[perm]
     current[perm] = value == true
 
-    MySQL.Sync.execute([[
+    _AwaitExecute([[
         INSERT INTO lyxpanel_role_permissions (role_name, permissions, updated_by, updated_at)
         VALUES (?, ?, ?, NOW())
         ON DUPLICATE KEY UPDATE permissions = VALUES(permissions), updated_by = VALUES(updated_by), updated_at = NOW()
     ]], { role, _EncodeJson(current), tostring(actorName or 'unknown') })
 
-    MySQL.Sync.execute([[
+    if MySQL and MySQL.insert then
+        MySQL.insert([[
+            INSERT INTO lyxpanel_permission_audit
+            (actor_identifier, actor_name, scope, role_name, permission_name, old_value, new_value)
+            VALUES (?, ?, 'role', ?, ?, ?, ?)
+        ]], {
+            tostring(actorIdentifier or 'unknown'),
+            tostring(actorName or 'unknown'),
+            role,
+            perm,
+            old == nil and nil or tostring(old),
+            tostring(value == true)
+        })
+    else
+        _AwaitExecute([[
         INSERT INTO lyxpanel_permission_audit
         (actor_identifier, actor_name, scope, role_name, permission_name, old_value, new_value)
         VALUES (?, ?, 'role', ?, ?, ?, ?)
-    ]], {
-        tostring(actorIdentifier or 'unknown'),
-        tostring(actorName or 'unknown'),
-        role,
-        perm,
-        old == nil and nil or tostring(old),
-        tostring(value == true)
-    })
+        ]], {
+            tostring(actorIdentifier or 'unknown'),
+            tostring(actorName or 'unknown'),
+            role,
+            perm,
+            old == nil and nil or tostring(old),
+            tostring(value == true)
+        })
+    end
 
     Store.roleOverrides[role] = Store.roleOverrides[role] or {}
     Store.roleOverrides[role].perms = current
@@ -116,18 +150,31 @@ function LyxPanel.PermissionsStore.ResetRole(role, actorName, actorIdentifier)
 
     local old = Store.roleOverrides[role] and Store.roleOverrides[role].perms or nil
 
-    MySQL.Sync.execute('DELETE FROM lyxpanel_role_permissions WHERE role_name = ?', { role })
+    _AwaitExecute('DELETE FROM lyxpanel_role_permissions WHERE role_name = ?', { role })
 
-    MySQL.Sync.execute([[
+    if MySQL and MySQL.insert then
+        MySQL.insert([[
+            INSERT INTO lyxpanel_permission_audit
+            (actor_identifier, actor_name, scope, role_name, permission_name, old_value, new_value)
+            VALUES (?, ?, 'role', ?, '__RESET__', ?, '__DEFAULT__')
+        ]], {
+            tostring(actorIdentifier or 'unknown'),
+            tostring(actorName or 'unknown'),
+            role,
+            old and _EncodeJson(old) or nil
+        })
+    else
+        _AwaitExecute([[
         INSERT INTO lyxpanel_permission_audit
         (actor_identifier, actor_name, scope, role_name, permission_name, old_value, new_value)
         VALUES (?, ?, 'role', ?, '__RESET__', ?, '__DEFAULT__')
-    ]], {
-        tostring(actorIdentifier or 'unknown'),
-        tostring(actorName or 'unknown'),
-        role,
-        old and _EncodeJson(old) or nil
-    })
+        ]], {
+            tostring(actorIdentifier or 'unknown'),
+            tostring(actorName or 'unknown'),
+            role,
+            old and _EncodeJson(old) or nil
+        })
+    end
 
     Store.roleOverrides[role] = nil
     return true
@@ -141,24 +188,39 @@ function LyxPanel.PermissionsStore.SetIndividualPermission(identifier, perm, val
     local old = Store.individualOverrides[identifier] and Store.individualOverrides[identifier][perm] or nil
     local val = value == true
 
-    MySQL.Sync.execute([[
+    _AwaitExecute([[
         INSERT INTO lyxpanel_individual_permissions (identifier, permission_name, value, updated_by, updated_at)
         VALUES (?, ?, ?, ?, NOW())
         ON DUPLICATE KEY UPDATE value = VALUES(value), updated_by = VALUES(updated_by), updated_at = NOW()
     ]], { identifier, perm, val and 1 or 0, tostring(actorName or 'unknown') })
 
-    MySQL.Sync.execute([[
+    if MySQL and MySQL.insert then
+        MySQL.insert([[
+            INSERT INTO lyxpanel_permission_audit
+            (actor_identifier, actor_name, scope, target_identifier, permission_name, old_value, new_value)
+            VALUES (?, ?, 'individual', ?, ?, ?, ?)
+        ]], {
+            tostring(actorIdentifier or 'unknown'),
+            tostring(actorName or 'unknown'),
+            identifier,
+            perm,
+            old == nil and nil or tostring(old),
+            tostring(val)
+        })
+    else
+        _AwaitExecute([[
         INSERT INTO lyxpanel_permission_audit
         (actor_identifier, actor_name, scope, target_identifier, permission_name, old_value, new_value)
         VALUES (?, ?, 'individual', ?, ?, ?, ?)
-    ]], {
-        tostring(actorIdentifier or 'unknown'),
-        tostring(actorName or 'unknown'),
-        identifier,
-        perm,
-        old == nil and nil or tostring(old),
-        tostring(val)
-    })
+        ]], {
+            tostring(actorIdentifier or 'unknown'),
+            tostring(actorName or 'unknown'),
+            identifier,
+            perm,
+            old == nil and nil or tostring(old),
+            tostring(val)
+        })
+    end
 
     Store.individualOverrides[identifier] = Store.individualOverrides[identifier] or {}
     Store.individualOverrides[identifier][perm] = val
@@ -171,19 +233,33 @@ function LyxPanel.PermissionsStore.ResetIndividual(identifier, perm, actorName, 
     if identifier == '' or perm == '' then return false end
 
     local old = Store.individualOverrides[identifier] and Store.individualOverrides[identifier][perm] or nil
-    MySQL.Sync.execute('DELETE FROM lyxpanel_individual_permissions WHERE identifier = ? AND permission_name = ?', { identifier, perm })
+    _AwaitExecute('DELETE FROM lyxpanel_individual_permissions WHERE identifier = ? AND permission_name = ?', { identifier, perm })
 
-    MySQL.Sync.execute([[
+    if MySQL and MySQL.insert then
+        MySQL.insert([[
+            INSERT INTO lyxpanel_permission_audit
+            (actor_identifier, actor_name, scope, target_identifier, permission_name, old_value, new_value)
+            VALUES (?, ?, 'individual', ?, ?, ?, '__DEFAULT__')
+        ]], {
+            tostring(actorIdentifier or 'unknown'),
+            tostring(actorName or 'unknown'),
+            identifier,
+            perm,
+            old == nil and nil or tostring(old)
+        })
+    else
+        _AwaitExecute([[
         INSERT INTO lyxpanel_permission_audit
         (actor_identifier, actor_name, scope, target_identifier, permission_name, old_value, new_value)
         VALUES (?, ?, 'individual', ?, ?, ?, '__DEFAULT__')
-    ]], {
-        tostring(actorIdentifier or 'unknown'),
-        tostring(actorName or 'unknown'),
-        identifier,
-        perm,
-        old == nil and nil or tostring(old)
-    })
+        ]], {
+            tostring(actorIdentifier or 'unknown'),
+            tostring(actorName or 'unknown'),
+            identifier,
+            perm,
+            old == nil and nil or tostring(old)
+        })
+    end
 
     if Store.individualOverrides[identifier] then
         Store.individualOverrides[identifier][perm] = nil
@@ -196,4 +272,3 @@ function LyxPanel.PermissionsStore.ResetIndividual(identifier, perm, actorName, 
 end
 
 print('^2[LyxPanel]^7 permissions_store loaded')
-
