@@ -173,9 +173,8 @@ end)
 -- Key handler for exiting spectate
 CreateThread(function()
     while true do
-        Wait(0)
-        
         if isSpectating then
+            Wait(0)
             -- E key to exit
             if IsControlJustPressed(0, 38) then
                 Spectate.Stop()

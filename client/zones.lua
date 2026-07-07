@@ -11,6 +11,17 @@
 local SavedWarps = {}
 local WarpFile = 'lyxpanel_warps.json'
 
+local function _GetWarpTimestamp()
+    if type(GetCloudTimeAsInt) == 'function' then
+        local ok, cloudTime = pcall(GetCloudTimeAsInt)
+        cloudTime = tonumber(cloudTime)
+        if ok and cloudTime and cloudTime > 0 then
+            return cloudTime
+        end
+    end
+    return math.floor((GetGameTimer() or 0) / 1000)
+end
+
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- ZONE CLEANUP
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -112,7 +123,7 @@ local function AddWarp(name)
         y = coords.y,
         z = coords.z,
         heading = heading,
-        timestamp = os.time()
+        timestamp = _GetWarpTimestamp()
     }
 
     SaveWarpsToKVP()

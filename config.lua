@@ -1,4 +1,4 @@
-﻿--[[
+--[[
     LyxPanel v3.0 - Ultra Premium Admin Panel
     50+ FUNCIONES DE ADMINISTRACIN
 ]]
@@ -392,6 +392,11 @@ Config.Security = {
     -- Loggear intentos de usar acciones sin permisos (suele ser cheater trigger)
     logDeniedPermissions = true,
     deniedCooldownMs = 5000,
+    -- Feedback al admin cuando una accion se bloquea por permisos.
+    -- Recomendado activar en staging/debug.
+    notifyDeniedPermissions = true,
+    -- Incluye reason code + permiso en el toast.
+    notifyDeniedPermissionDetails = true,
 
     -- Si lyx-guard esta iniciado, registrar como deteccion (solo log, sin ban)
     forwardDeniedToLyxGuard = true,
@@ -440,6 +445,10 @@ Config.Security = {
 
         -- Optional UX feedback for valid admins when firewall blocks malformed payload.
         notifyPlayer = true,
+        -- Debug de runtime (no cambia la logica, solo visibilidad del motivo).
+        debugBlockReasons = true, -- muestra reason code en notificaciones de bloqueo
+        debugConsoleBlocks = true, -- imprime bloqueos en consola del servidor
+        debugAllowFlow = true, -- imprime eventos permitidos (puede spamear consola)
 
         -- Session token + nonce anti-replay for every protected admin event.
         actionSecurity = {

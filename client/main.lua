@@ -1,4 +1,4 @@
-﻿--[[
+--[[
     LyxPanel v3.0 - Client Main
     50+ Funciones de administracin
 ]]
@@ -29,6 +29,19 @@ local vehicleGodmodeActive = false
 -- Forward declarations
 local OpenPanel
 
+local function _NormalizeOpenCommand(raw, fallback)
+    local cmd = tostring(raw or ''):lower()
+    cmd = cmd:gsub('^/', '')
+    cmd = cmd:gsub('%s+', '')
+    if cmd == '' then
+        cmd = tostring(fallback or 'lyxpanel')
+    end
+    return cmd
+end
+
+local PANEL_OPEN_COMMAND = _NormalizeOpenCommand(Config and Config.OpenCommand, 'lyxpanel')
+local PANEL_LEGACY_ALIAS = 'panel'
+
 local function _SetPanelSecurity(sec)
     if type(sec) ~= 'table' then
         panelSecurity.enabled = false
@@ -42,6 +55,20 @@ local function _SetPanelSecurity(sec)
     panelSecurity.token = panelSecurity.enabled and sec.token or nil
     panelSecurity.tokenTtlMs = tonumber(sec.tokenTtlMs) or 0
     panelSecurity.nonceCounter = 0
+end
+
+local function _GetSecurityTimestampMs()
+    if type(GetCloudTimeAsInt) == 'function' then
+        local ok, cloudTime = pcall(GetCloudTimeAsInt)
+        cloudTime = tonumber(cloudTime)
+        if ok and cloudTime and cloudTime > 0 then
+            return cloudTime * 1000
+        end
+    end
+
+    -- Cloud time can be unavailable in some client sessions.
+    -- Returning 0 keeps envelope generation working and lets server skip skew validation.
+    return 0
 end
 
 local function _GenerateSecurityEnvelope(eventName)
@@ -66,7 +93,7 @@ local function _GenerateSecurityEnvelope(eventName)
             token = panelSecurity.token,
             nonce = nonce,
             correlation_id = correlationId,
-            ts = os.time() * 1000,
+            ts = _GetSecurityTimestampMs(),
             event = tostring(eventName or '')
         }
     }
@@ -125,9 +152,14 @@ OpenPanel = function()
             end)
         else
             _SetPanelSecurity(nil)
-            print('[LyxPanel] Acceso denegado.')
+            local reason = tostring((data and data.reason) or 'no_access')
+            print(('[LyxPanel] Acceso denegado. reason=%s command=/%s key=%s'):format(
+                reason,
+                PANEL_OPEN_COMMAND,
+                tostring((data and data.openKey) or (Config and Config.OpenKey) or 'N/A')
+            ))
             SetNotificationTextEntry('STRING')
-            AddTextComponentString('~r~Sin acceso al panel')
+            AddTextComponentString(('~r~Sin acceso al panel (~s~%s~r~)'):format(reason))
             DrawNotification(true, true)
         end
     end)
@@ -148,7 +180,7 @@ end, false)
 -- COMANDO Y KEYBIND
 -- ...............................................................................
 
-RegisterCommand('panel', function()
+local function TogglePanel()
     if isOpen then
         SetNuiFocus(false, false)
         isOpen = false
@@ -158,9 +190,31 @@ RegisterCommand('panel', function()
     else
         OpenPanel()
     end
-end, false)
+end
 
-RegisterKeyMapping('panel', 'Abrir Panel Admin LyxPanel', 'keyboard', 'F6')
+RegisterCommand(PANEL_OPEN_COMMAND, TogglePanel, false)
+if PANEL_OPEN_COMMAND ~= PANEL_LEGACY_ALIAS then
+    RegisterCommand(PANEL_LEGACY_ALIAS, TogglePanel, false)
+end
+
+if Config and Config.OpenKey and Config.OpenKey ~= '' then
+    RegisterKeyMapping(PANEL_OPEN_COMMAND, 'Abrir Panel Admin LyxPanel', 'keyboard', Config.OpenKey or 'F6')
+end
+
+CreateThread(function()
+    local attempts = 0
+    while attempts < 20 and GetResourceState('chat') ~= 'started' do
+        attempts = attempts + 1
+        Wait(500)
+    end
+
+    if GetResourceState('chat') == 'started' then
+        TriggerEvent('chat:addSuggestion', '/' .. PANEL_OPEN_COMMAND, 'Abrir o cerrar LyxPanel')
+        if PANEL_OPEN_COMMAND ~= PANEL_LEGACY_ALIAS then
+            TriggerEvent('chat:addSuggestion', '/' .. PANEL_LEGACY_ALIAS, 'Alias legacy para abrir LyxPanel')
+        end
+    end
+end)
 
 -- Event handler for other scripts
 AddEventHandler('lyxpanel:open', OpenPanel)
@@ -177,6 +231,12 @@ AddEventHandler('onResourceStop', function(resourceName)
     if resourceName ~= GetCurrentResourceName() then return end
     if isOpen then
         SendSecureServerEvent('lyxpanel:panelSession', false)
+    end
+    if GetResourceState('chat') == 'started' then
+        TriggerEvent('chat:removeSuggestion', '/' .. PANEL_OPEN_COMMAND)
+        if PANEL_OPEN_COMMAND ~= PANEL_LEGACY_ALIAS then
+            TriggerEvent('chat:removeSuggestion', '/' .. PANEL_LEGACY_ALIAS)
+        end
     end
     _SetPanelSecurity(nil)
 end)
@@ -2162,7 +2222,9 @@ end)
 
 CreateThread(function()
     while true do
+        local waitMs = 250
         if noclipActive then
+            waitMs = 0
             local ped = PlayerPedId()
             local c = GetEntityCoords(ped)
             local camRot = GetGameplayCamRot(2)
@@ -2224,24 +2286,24 @@ CreateThread(function()
             DisableControlAction(0, 44, true) -- COVER (Q)
             DisableControlAction(0, 38, true) -- PICKUP (E)
         end
-        Wait(0)
+        Wait(waitMs)
     end
 end)
-
-
--- Key to open
-if Config and Config.OpenKey and Config.OpenKey ~= '' then
-    RegisterKeyMapping(Config.OpenCommand or 'lyxpanel', 'Abrir Panel Admin', 'keyboard', Config.OpenKey or 'F6')
-end
 
 -- Escape to close
 CreateThread(function()
     while true do
-        Wait(0)
-        if isOpen and IsControlJustReleased(0, 200) then -- ESC
-            SetNuiFocus(false, false)
-            isOpen = false
-            SendNUIMessage({ action = 'close' })
+        if isOpen then
+            Wait(0)
+            if IsControlJustReleased(0, 200) then -- ESC
+                SetNuiFocus(false, false)
+                isOpen = false
+                SendSecureServerEvent('lyxpanel:panelSession', false)
+                _SetPanelSecurity(nil)
+                SendNUIMessage({ action = 'close' })
+            end
+        else
+            Wait(250)
         end
     end
 end)

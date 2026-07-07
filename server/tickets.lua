@@ -12,19 +12,36 @@
 
 local ESX = ESX
 
-CreateThread(function()
-    local resolved = ESX
+local function _TryResolveESX(timeoutMs)
+    local resolved = ESX or _G.ESX
+    if resolved then
+        ESX = resolved
+        _G.ESX = _G.ESX or resolved
+        return resolved
+    end
+
     if LyxPanel and LyxPanel.WaitForESX then
-        resolved = LyxPanel.WaitForESX(15000)
+        resolved = LyxPanel.WaitForESX(timeoutMs or 5000)
+        if resolved then
+            ESX = resolved
+            _G.ESX = _G.ESX or resolved
+            return resolved
+        end
     end
 
+    return nil
+end
+
+CreateThread(function()
+    local resolved = _TryResolveESX(15000)
     if not resolved then
-        print('^1[LyxPanel]^7 tickets: ESX no disponible (timeout).')
-        return
+        print('^3[LyxPanel]^7 tickets: ESX no disponible (timeout inicial). Reintentando cada 2s...')
+        while not resolved do
+            Wait(2000)
+            resolved = _TryResolveESX(2000)
+        end
+        print('^2[LyxPanel]^7 tickets: ESX detectado tras reintento.')
     end
-
-    ESX = resolved
-    _G.ESX = _G.ESX or resolved
 end)
 
 local function _GetId(source, idType)
@@ -181,4 +198,3 @@ RegisterCommand('ticket', function(source, args, raw)
 end, false)
 
 print('^2[LyxPanel]^7 tickets module loaded')
-

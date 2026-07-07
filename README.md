@@ -121,6 +121,11 @@ Config.OpenCommand = 'lyxpanel'
 Config.OpenKey = 'F6'
 ```
 
+Runtime:
+- comando por defecto: `/lyxpanel`
+- alias legacy: `/panel`
+- tecla por defecto: `F6`
+
 Perfil runtime:
 ```lua
 Config.RuntimeProfile = 'default' -- rp_light | production_high_load | hostile

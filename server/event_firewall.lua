@@ -1699,6 +1699,9 @@ local function _GetCfg()
         banBy = tostring(cfg.banBy or 'LyxPanel Firewall'),
         punishCooldownMs = math.max(tonumber(cfg.punishCooldownMs) or 15000, 1000),
         notifyPlayer = cfg.notifyPlayer ~= false,
+        debugBlockReasons = cfg.debugBlockReasons == true or (Config and Config.Debug == true),
+        debugAllowFlow = cfg.debugAllowFlow == true,
+        debugConsoleBlocks = cfg.debugConsoleBlocks == true or (Config and Config.Debug == true),
         schemaValidation = cfg.schemaValidation ~= false,
         schemas = _BuildSchemaMap(cfg.schemas),
         protectedEvents = _BuildProtectedEventMap(cfg.protectedEvents),
@@ -2362,6 +2365,48 @@ local function _ValidateSchema(eventName, eventData, cfg)
     return true, nil, nil
 end
 
+local function _BuildPlayerBlockMessage(baseMessage, reasonCode, cfg, meta)
+    local msg = tostring(baseMessage or 'Accion bloqueada por firewall')
+    if not cfg or cfg.debugBlockReasons ~= true then
+        return msg
+    end
+
+    local reason = tostring(reasonCode or 'unknown')
+    local extra = nil
+    if type(meta) == 'table' then
+        if type(meta.requiredPermission) == 'string' and meta.requiredPermission ~= '' then
+            extra = ('perm=%s'):format(meta.requiredPermission)
+        elseif type(meta.event) == 'string' and meta.event ~= '' then
+            extra = ('event=%s'):format(meta.event)
+        end
+    end
+
+    local detail = extra and (reason .. ' | ' .. extra) or reason
+    if #detail > 96 then
+        detail = detail:sub(1, 96) .. '...'
+    end
+    return ('%s [%s]'):format(msg, detail)
+end
+
+local function _NotifyFirewallBlocked(src, eventRule, cfg, baseMessage, reasonCode, meta)
+    if not eventRule or eventRule.notifyPlayer ~= true then
+        return
+    end
+    TriggerClientEvent('lyxpanel:notify', src, 'error', _BuildPlayerBlockMessage(baseMessage, reasonCode, cfg, meta))
+end
+
+local function _DebugFirewallBlock(cfg, src, eventName, reasonCode, details)
+    if not cfg or cfg.debugConsoleBlocks ~= true then
+        return
+    end
+    local payload = {
+        event = eventName,
+        reason = reasonCode,
+        details = details or {}
+    }
+    print(('[LyxPanel][FW][BLOCK] src=%s %s'):format(tostring(src), json.encode(payload)))
+end
+
 local function _PunishSpoofer(src, cfg, eventName, reason, extra)
     local now = GetGameTimer()
     local last = FirewallState.punishCooldown[src] or 0
@@ -2438,6 +2483,10 @@ AddEventHandler('__cfx_internal:serverEventTriggered', function(eventName, event
     if not accessReady then
         CancelEvent()
         _LogSecurity(src, 'ADMIN_EVENT_BLOCKED', eventName, 'access_layer_not_ready', {})
+        _DebugFirewallBlock(cfg, src, eventName, 'access_layer_not_ready', {})
+        _NotifyFirewallBlocked(src, eventRule, cfg, 'Accion bloqueada: sistema de acceso no listo', 'access_layer_not_ready', {
+            event = eventName
+        })
         return
     end
 
@@ -2445,6 +2494,7 @@ AddEventHandler('__cfx_internal:serverEventTriggered', function(eventName, event
         CancelEvent()
         local details = { group = group, source = src }
         _LogSecurity(src, 'ADMIN_EVENT_BLOCKED', eventName, 'event_not_allowlisted', details)
+        _DebugFirewallBlock(cfg, src, eventName, 'event_not_allowlisted', details)
         _ForwardDetection(src, 'lyxpanel_admin_event_not_allowlisted', {
             event = eventName,
             group = group
@@ -2452,8 +2502,9 @@ AddEventHandler('__cfx_internal:serverEventTriggered', function(eventName, event
 
         if not hasPanelAccess then
             _PunishSpoofer(src, cfg, eventName, 'event_not_allowlisted', details)
-        elseif cfg.notifyPlayer then
-            TriggerClientEvent('lyxpanel:notify', src, 'error', 'Evento admin bloqueado por firewall')
+        else
+            _NotifyFirewallBlocked(src, eventRule, cfg, 'Evento admin bloqueado por firewall', 'event_not_allowlisted',
+                details)
         end
         return
     end
@@ -2471,11 +2522,12 @@ AddEventHandler('__cfx_internal:serverEventTriggered', function(eventName, event
             missingPermission = missingPermission
         }
         _LogSecurity(src, 'ADMIN_EVENT_SPOOF', eventName, reason, details)
+        _DebugFirewallBlock(cfg, src, eventName, reason, details)
 
         if eventRule.punishNoAccess ~= false then
             _PunishSpoofer(src, cfg, eventName, reason, details)
-        elseif eventRule.notifyPlayer then
-            TriggerClientEvent('lyxpanel:notify', src, 'error', 'Acceso denegado por firewall')
+        else
+            _NotifyFirewallBlocked(src, eventRule, cfg, 'Acceso denegado por firewall', reason, details)
         end
         return
     end
@@ -2493,9 +2545,9 @@ AddEventHandler('__cfx_internal:serverEventTriggered', function(eventName, event
             group = group,
             ttlMs = cfg.sessionTtlMs
         })
-        if eventRule.notifyPlayer then
-            TriggerClientEvent('lyxpanel:notify', src, 'error', 'Accion bloqueada: abre el panel nuevamente')
-        end
+        _DebugFirewallBlock(cfg, src, eventName, 'panel_session_required', details)
+        _NotifyFirewallBlocked(src, eventRule, cfg, 'Accion bloqueada: abre el panel nuevamente',
+            'panel_session_required', details)
         return
     end
 
@@ -2511,6 +2563,7 @@ AddEventHandler('__cfx_internal:serverEventTriggered', function(eventName, event
         }
 
         _LogSecurity(src, 'ADMIN_EVENT_SECURITY', eventName, securityReason, details)
+        _DebugFirewallBlock(cfg, src, eventName, securityReason, details)
 
         local detectionType = 'lyxpanel_admin_event_token'
         if securityReason == 'security_nonce_replay' then
@@ -2530,10 +2583,19 @@ AddEventHandler('__cfx_internal:serverEventTriggered', function(eventName, event
         )
         if shouldPunish and eventRule.punishNoAccess ~= false then
             _PunishSpoofer(src, cfg, eventName, securityReason, details)
-        elseif eventRule.notifyPlayer then
-            TriggerClientEvent('lyxpanel:notify', src, 'error', 'Accion bloqueada: sesion segura invalida')
+        else
+            _NotifyFirewallBlocked(src, eventRule, cfg, 'Accion bloqueada: sesion segura invalida', securityReason,
+                details)
         end
         return
+    end
+
+    if cfg.debugAllowFlow == true then
+        print(('[LyxPanel][FW][ALLOW] src=%s group=%s event=%s'):format(
+            tostring(src),
+            tostring(group or 'none'),
+            tostring(eventName)
+        ))
     end
 
     if type(TouchPanelSession) == 'function' and (isActionEvent or eventRule.requireActiveSession == true) then
@@ -2550,15 +2612,14 @@ AddEventHandler('__cfx_internal:serverEventTriggered', function(eventName, event
             windowMs = cfg.windowMs
         }
         _LogSecurity(src, 'ADMIN_EVENT_RATE_LIMIT', eventName, 'rate_limited', details)
+        _DebugFirewallBlock(cfg, src, eventName, 'rate_limited', details)
         _ForwardDetection(src, 'lyxpanel_admin_event_rate_limit', {
             event = eventName,
             group = group,
             count = count,
             limit = cfg.maxEventsPerWindow
         })
-        if eventRule.notifyPlayer then
-            TriggerClientEvent('lyxpanel:notify', src, 'error', 'Rate limit de eventos admin excedido')
-        end
+        _NotifyFirewallBlocked(src, eventRule, cfg, 'Rate limit de eventos admin excedido', 'rate_limited', details)
         return
     end
 
@@ -2571,15 +2632,14 @@ AddEventHandler('__cfx_internal:serverEventTriggered', function(eventName, event
             payloadMeta = payloadMeta
         }
         _LogSecurity(src, 'ADMIN_EVENT_PAYLOAD', eventName, payloadReason, details)
+        _DebugFirewallBlock(cfg, src, eventName, payloadReason, details)
         _ForwardDetection(src, 'lyxpanel_admin_event_payload', {
             event = eventName,
             group = group,
             reason = payloadReason,
             meta = payloadMeta
         })
-        if eventRule.notifyPlayer then
-            TriggerClientEvent('lyxpanel:notify', src, 'error', 'Payload invalido en evento protegido')
-        end
+        _NotifyFirewallBlocked(src, eventRule, cfg, 'Payload invalido en evento protegido', payloadReason, details)
         return
     end
 
@@ -2592,15 +2652,14 @@ AddEventHandler('__cfx_internal:serverEventTriggered', function(eventName, event
             schemaMeta = schemaMeta
         }
         _LogSecurity(src, 'ADMIN_EVENT_SCHEMA', eventName, schemaReason, details)
+        _DebugFirewallBlock(cfg, src, eventName, schemaReason, details)
         _ForwardDetection(src, 'lyxpanel_admin_event_schema', {
             event = eventName,
             group = group,
             reason = schemaReason,
             meta = schemaMeta
         })
-        if eventRule.notifyPlayer then
-            TriggerClientEvent('lyxpanel:notify', src, 'error', 'Payload fuera de schema permitido')
-        end
+        _NotifyFirewallBlocked(src, eventRule, cfg, 'Payload fuera de schema permitido', schemaReason, details)
     end
 end)
 

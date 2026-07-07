@@ -1,4 +1,4 @@
-﻿/* LyxPanel v4.6 - Extended JS (safe rebuild)
+/* LyxPanel v4.6 - Extended JS (safe rebuild)
    Notes:
    - Rebuilt to recover from syntax corruption.
    - Keeps compatibility with existing app.js globals.

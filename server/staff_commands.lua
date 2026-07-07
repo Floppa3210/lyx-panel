@@ -1,4 +1,4 @@
-﻿--[[
+--[[
     
                         LYXPANEL v4.0 - STAFF COMMANDS                            
                         Optimizado para ESX Legacy 1.9+                            
@@ -30,8 +30,17 @@ CreateThread(function()
     end
 
     if not resolved then
-        print('^1[LyxPanel Staff]^7 ESX no disponible (timeout).')
-        return
+        print('^3[LyxPanel Staff]^7 ESX no disponible (timeout inicial). Reintentando cada 2s...')
+        while not resolved do
+            Wait(2000)
+            if LyxPanel and LyxPanel.GetESX then
+                resolved = LyxPanel.GetESX()
+            end
+            if not resolved then
+                resolved = ESX or _G.ESX
+            end
+        end
+        print('^2[LyxPanel Staff]^7 ESX detectado tras reintento.')
     end
 
     ESX = resolved

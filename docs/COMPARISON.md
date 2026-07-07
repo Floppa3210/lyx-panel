@@ -1,4 +1,4 @@
-﻿# LyxPanel - Comparaciones y Alcance
+# LyxPanel - Comparaciones y Alcance
 
 Este documento compara el enfoque de LyxPanel con:
 - paneles open source 

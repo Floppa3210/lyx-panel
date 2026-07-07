@@ -1,4 +1,4 @@
-﻿--[[
+--[[
     LyxPanel - Report System (Hardened)
 
     Goals:

@@ -298,9 +298,8 @@ CreateThread(function()
     local frameCount = 0
     
     while true do
-        Wait(0)
-        
         if hudEnabled and Config.SelfAdminHud and Config.SelfAdminHud.enabled then
+            Wait(0)
             local ped = PlayerPedId()
             local coords = GetEntityCoords(ped)
             

@@ -1,4 +1,4 @@
-﻿--[[
+--[[
     
                         LYXPANEL v4.0 - SERVER ACTIONS                            
                         Optimizado para ESX Legacy 1.9+                            
@@ -7,19 +7,36 @@
 
 local ESX = ESX
 
-CreateThread(function()
-    local resolved = ESX
+local function _TryResolveESX(timeoutMs)
+    local resolved = ESX or _G.ESX
+    if resolved then
+        ESX = resolved
+        _G.ESX = _G.ESX or resolved
+        return resolved
+    end
+
     if LyxPanel and LyxPanel.WaitForESX then
-        resolved = LyxPanel.WaitForESX(15000)
+        resolved = LyxPanel.WaitForESX(timeoutMs or 5000)
+        if resolved then
+            ESX = resolved
+            _G.ESX = _G.ESX or resolved
+            return resolved
+        end
     end
 
+    return nil
+end
+
+CreateThread(function()
+    local resolved = _TryResolveESX(15000)
     if not resolved then
-        print('^1[LyxPanel]^7 actions: ESX no disponible (timeout).')
-        return
+        print('^3[LyxPanel]^7 actions: ESX no disponible (timeout inicial). Reintentando cada 2s...')
+        while not resolved do
+            Wait(2000)
+            resolved = _TryResolveESX(2000)
+        end
+        print('^2[LyxPanel]^7 actions: ESX detectado tras reintento.')
     end
-
-    ESX = resolved
-    _G.ESX = _G.ESX or resolved
 end)
 
 -- Utility function to get player identifier
@@ -2873,10 +2890,16 @@ end)
 
 -- Obtener mensajes de un reporte (ESX Callback)
 CreateThread(function()
-    if not ESX and LyxPanel and LyxPanel.WaitForESX then
-        ESX = LyxPanel.WaitForESX(15000)
+    local resolved = ESX or _TryResolveESX(15000)
+    if not resolved then
+        print('^3[LyxPanel]^7 actions: callbacks(getReportMessages) esperando ESX...')
+        while not resolved do
+            Wait(2000)
+            resolved = _TryResolveESX(2000)
+        end
+        print('^2[LyxPanel]^7 actions: callbacks(getReportMessages) registrados tras reintento ESX.')
     end
-    if not ESX then return end
+    ESX = resolved
     ESX.RegisterServerCallback('lyxpanel:getReportMessages', function(source, cb, reportId)
         if not HasPermission(source, 'canManageReports') then
             cb({})
@@ -2959,10 +2982,16 @@ end)
 
 -- Obtener whitelist (ESX Callback)
 CreateThread(function()
-    if not ESX and LyxPanel and LyxPanel.WaitForESX then
-        ESX = LyxPanel.WaitForESX(15000)
+    local resolved = ESX or _TryResolveESX(15000)
+    if not resolved then
+        print('^3[LyxPanel]^7 actions: callbacks(getWhitelist) esperando ESX...')
+        while not resolved do
+            Wait(2000)
+            resolved = _TryResolveESX(2000)
+        end
+        print('^2[LyxPanel]^7 actions: callbacks(getWhitelist) registrados tras reintento ESX.')
     end
-    if not ESX then return end
+    ESX = resolved
     ESX.RegisterServerCallback('lyxpanel:getWhitelist', function(source, cb)
         if not HasPermission(source, 'canManageWhitelist') then
             cb({})
@@ -2976,10 +3005,16 @@ end)
 
 -- Buscar jugadores (ESX Callback)
 CreateThread(function()
-    if not ESX and LyxPanel and LyxPanel.WaitForESX then
-        ESX = LyxPanel.WaitForESX(15000)
+    local resolved = ESX or _TryResolveESX(15000)
+    if not resolved then
+        print('^3[LyxPanel]^7 actions: callbacks(searchPlayers) esperando ESX...')
+        while not resolved do
+            Wait(2000)
+            resolved = _TryResolveESX(2000)
+        end
+        print('^2[LyxPanel]^7 actions: callbacks(searchPlayers) registrados tras reintento ESX.')
     end
-    if not ESX then return end
+    ESX = resolved
     ESX.RegisterServerCallback('lyxpanel:searchPlayers', function(source, cb, query)
         if type(HasPanelAccess) == 'function' then
             if not HasPanelAccess(source) then
@@ -2990,18 +3025,25 @@ CreateThread(function()
             cb({}); return
         end
         local searchQuery = '%' .. query .. '%'
-        MySQL.query([[
+        local guardAvailable = (LyxPanel and LyxPanel.IsLyxGuardAvailable and LyxPanel.IsLyxGuardAvailable()) or false
+        local banCountExpr = guardAvailable
+            and '(SELECT COUNT(*) FROM lyxguard_bans WHERE identifier = u.identifier) as ban_count,'
+            or '0 as ban_count,'
+
+        local sql = ([[
             SELECT
                 u.identifier,
                 CONCAT(u.firstname, ' ', u.lastname) as name,
                 u.job,
-                (SELECT COUNT(*) FROM lyxguard_bans WHERE identifier = u.identifier) as ban_count,
+                %s
                 (SELECT COUNT(*) FROM lyxpanel_logs WHERE target_id = u.identifier AND action = 'WARN') as warn_count,
                 (SELECT COUNT(*) FROM lyxpanel_logs WHERE target_id = u.identifier AND action = 'KICK') as kick_count
             FROM users u
             WHERE u.identifier LIKE ? OR u.firstname LIKE ? OR u.lastname LIKE ?
             LIMIT 20
-        ]], { searchQuery, searchQuery, searchQuery }, function(result)
+        ]]):format(banCountExpr)
+
+        MySQL.query(sql, { searchQuery, searchQuery, searchQuery }, function(result)
             cb(result or {})
         end)
     end)

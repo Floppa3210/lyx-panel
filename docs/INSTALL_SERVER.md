@@ -28,6 +28,23 @@ ensure lyx-guard
 ensure lyx-panel
 ```
 
+ACE recomendado (opcional pero util para bootstrap inicial):
+
+```cfg
+# Vincula tu license al grupo admin/superadmin
+add_principal identifier.license:TU_LICENSE group.superadmin
+
+# Permisos directos para lyx-panel
+add_ace group.admin lyxpanel.access allow
+add_ace group.superadmin lyxpanel.admin allow
+```
+
+Si todavia no tenes grupos/ACE listos, podes sembrar acceso desde consola:
+
+```text
+lyxpanel_seed_access license:TU_LICENSE superadmin bootstrap
+```
+
 ## 4) Base de datos
 LyxPanel aplica migraciones versionadas al iniciar.
 No necesitas ejecutar SQL manual (salvo que quieras auditar tablas).
@@ -39,6 +56,13 @@ Puntos a revisar:
 Tablas principales (resumen):
 - `lyxpanel_*` (logs, reports, tickets, bans/acciones, presets).
 - `lyxpanel_schema_migrations` (versionado de migraciones).
+- si `lyx-guard` esta activo: `lyxguard_bans`, `lyxguard_detections`, `lyxguard_warnings`, `lyxguard_schema_migrations`.
+
+Chequeo rapido desde consola del servidor:
+
+```text
+lyxpanel_dbcheck
+```
 
 ## 5) Configuracion basica (defaults)
 Archivo: `config.lua`
@@ -65,6 +89,9 @@ Config.OpenKey = 'F6' -- default actual en config.lua
 
 Recomendacion:
 - usar un comando y una tecla que no choque con otros recursos.
+- comando final por defecto: `/lyxpanel`
+- alias legacy soportado: `/panel`
+- tecla por defecto: `F6`
 
 ### 5.2 Perfil runtime
 ```lua
@@ -137,8 +164,10 @@ Si `lyx-guard` NO esta activo:
 
 ## 9) Troubleshooting rapido
 ### No abre el panel
-- revisar `Config.OpenCommand` y `Config.OpenKey`
-- revisar permisos del jugador
+- usar comando exacto: `/lyxpanel` (alias `/panel`) y tecla default `F6`
+- revisar que `es_extended` este started antes de `lyx-panel`
+- revisar permisos del jugador (ACE, grupo ESX o `lyxpanel_access_list`)
+- ejecutar desde consola: `lyxpanel_seed_access license:TU_LICENSE superadmin bootstrap`
 - revisar NUI (si otro recurso bloquea focus)
 
 ### Acciones bloqueadas por firewall
@@ -148,6 +177,7 @@ Si `lyx-guard` NO esta activo:
 ### No aparecen tickets/logs
 - revisar DB (oxmysql)
 - revisar migraciones y permisos MySQL
+- ejecutar `lyxpanel_dbcheck` y corregir tablas faltantes
 
 ## 10) Checklist de seguridad recomendada (produccion)
 - `Config.Security.adminEventFirewall.enabled = true`
@@ -162,3 +192,16 @@ Si `lyx-guard` NO esta activo:
 2. Reiniciar.
 3. (Opcional) conservar DB para auditoria historica. Si queres borrar:
    - eliminar tablas `lyxpanel_*` manualmente (recomendado hacerlo con cuidado).
+
+## 12) Encoding obligatorio (evitar `unexpected symbol near '<239>'`)
+- Todos los `.lua`, `.js` y `.html` deben guardarse como **UTF-8 sin BOM**.
+- El BOM (`EF BB BF`) rompe el parser Lua de FXServer al inicio del archivo.
+
+En VSCode:
+1. Abrir `Settings` y buscar `files.encoding`.
+2. Setear `UTF-8` (no `UTF-8 with BOM`).
+3. Si un archivo ya tiene BOM: click en la esquina inferior derecha (encoding) y elegir `Save with Encoding -> UTF-8`.
+
+Checklist rapido antes de deploy:
+- ejecutar `lyxpanel_dbcheck` en consola para validar tablas;
+- revisar consola de inicio y confirmar que no haya `unexpected symbol near '<239>'`.

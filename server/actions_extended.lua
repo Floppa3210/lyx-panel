@@ -1,4 +1,4 @@
-﻿--[[
+--[[
     
                         LYXPANEL v4.0 - EXTENDED ACTIONS                          
                           Advanced Administration Features                         
@@ -56,20 +56,31 @@ end
 CreateThread(function()
     local resolved = _ResolveESX(15000)
     if not resolved then
-        print('^1[LyxPanel]^7 actions_extended: ESX no disponible (timeout), callbacks no registrados.')
-        return
+        print('^3[LyxPanel]^7 actions_extended: ESX no disponible (timeout inicial). Reintentando cada 2s...')
+        while not resolved do
+            Wait(2000)
+            if LyxPanel and LyxPanel.GetESX then
+                resolved = LyxPanel.GetESX()
+            end
+            if not resolved then
+                resolved = _ResolveESX(2000) or ESX or _G.ESX
+            end
+        end
+        print('^2[LyxPanel]^7 actions_extended: ESX detectado tras reintento. Registrando callbacks.')
     end
 
     ESX = resolved
     _G.ESX = _G.ESX or ESX
 
-    for i = 1, #_PendingESXCallbacks do
-        local entry = _PendingESXCallbacks[i]
-        ESX.RegisterServerCallback(entry.name, entry.handler)
-    end
+    if not _CallbacksFlushed then
+        for i = 1, #_PendingESXCallbacks do
+            local entry = _PendingESXCallbacks[i]
+            ESX.RegisterServerCallback(entry.name, entry.handler)
+        end
 
-    _PendingESXCallbacks = {}
-    _CallbacksFlushed = true
+        _PendingESXCallbacks = {}
+        _CallbacksFlushed = true
+    end
 end)
 
 local _ActionCooldowns = {}

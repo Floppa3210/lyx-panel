@@ -280,6 +280,7 @@ end)
 
 CreateThread(function()
     while true do
+        local waitMs = 350
         local ped = PlayerPedId()
         
         -- Infinite stamina
@@ -315,8 +316,14 @@ CreateThread(function()
                 SetVehicleBodyHealth(vehicle, 1000.0)
             end
         end
-        
-        Wait(0)
+
+        if toggleStates.superJump or toggleStates.nitro then
+            waitMs = 0
+        elseif toggleStates.infiniteStamina or toggleStates.vehicleGodmode then
+            waitMs = 100
+        end
+
+        Wait(waitMs)
     end
 end)
 

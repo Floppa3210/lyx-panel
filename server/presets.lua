@@ -14,17 +14,35 @@
 
 local ESX = ESX
 
-CreateThread(function()
-    local resolved = ESX
-    if LyxPanel and LyxPanel.WaitForESX then
-        resolved = LyxPanel.WaitForESX(15000)
+local function _TryResolveESX(timeoutMs)
+    local resolved = ESX or _G.ESX
+    if resolved then
+        ESX = resolved
+        _G.ESX = _G.ESX or resolved
+        return resolved
     end
 
-    ESX = resolved or ESX or _G.ESX
-    if ESX then
-        _G.ESX = _G.ESX or ESX
-    else
-        print('^1[LyxPanel]^7 presets: ESX no disponible (timeout).')
+    if LyxPanel and LyxPanel.WaitForESX then
+        resolved = LyxPanel.WaitForESX(timeoutMs or 5000)
+        if resolved then
+            ESX = resolved
+            _G.ESX = _G.ESX or resolved
+            return resolved
+        end
+    end
+
+    return nil
+end
+
+CreateThread(function()
+    local resolved = _TryResolveESX(15000)
+    if not resolved then
+        print('^3[LyxPanel]^7 presets: ESX no disponible (timeout inicial). Reintentando cada 2s...')
+        while not resolved do
+            Wait(2000)
+            resolved = _TryResolveESX(2000)
+        end
+        print('^2[LyxPanel]^7 presets: ESX detectado tras reintento.')
     end
 end)
 
@@ -531,4 +549,3 @@ exports('TrackVehicleSpawnHistory', function(adminSource, model, label, targetId
 end)
 
 print('^2[LyxPanel]^7 presets module loaded')
-

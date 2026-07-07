@@ -1,4 +1,4 @@
-﻿--[[
+--[[
     
                              LYXPANEL v4.0 - SERVER MAIN                           
                             Optimizado para ESX Legacy 1.9+                        
@@ -507,6 +507,31 @@ _AuditDeniedPermission = function(src, perm, group, reason)
         tostring(reason or 'denied')
     ))
 
+    local notifyDenied = (Config and Config.Security and Config.Security.notifyDeniedPermissions == true) or
+        (Config and Config.Debug == true)
+    if notifyDenied == true and GetPlayerName(src) then
+        local hasPanel = false
+        local okAccess, access = pcall(function()
+            return HasPanelAccess(src)
+        end)
+        if okAccess and access then
+            hasPanel = true
+        end
+
+        if hasPanel then
+            local detailMode = (Config and Config.Security and Config.Security.notifyDeniedPermissionDetails == true) or
+                (Config and Config.Debug == true)
+            local suffix = tostring(reason or 'denied')
+            if detailMode then
+                suffix = ('%s | perm=%s'):format(suffix, tostring(perm or 'unknown'))
+            end
+            if #suffix > 80 then
+                suffix = suffix:sub(1, 80) .. '...'
+            end
+            TriggerClientEvent('lyxpanel:notify', src, 'error', ('Accion bloqueada por permisos [%s]'):format(suffix))
+        end
+    end
+
     -- Persist denied permission attempts to admin logs for panel auditing/debugging.
     if MySQL and MySQL.insert then
         pcall(function()
@@ -581,12 +606,55 @@ function GetId(source, idType)
     return GetIdentifier(source, idType) or 'unknown'
 end
 
+local function GetOpenCommandName()
+    local cmd = tostring((Config and Config.OpenCommand) or 'lyxpanel')
+    cmd = cmd:lower():gsub('^/', ''):gsub('%s+', '')
+    if cmd == '' then
+        cmd = 'lyxpanel'
+    end
+    return cmd
+end
+
+local function _NormalizeRoleToken(value)
+    local s = tostring(value or ''):lower()
+    s = s:gsub('%s+', '')
+    s = s:gsub('%-', '_')
+    return s
+end
+
+local function _ResolvePanelRoleName(rawGroup)
+    local token = _NormalizeRoleToken(rawGroup)
+    if token == '' then
+        return nil
+    end
+
+    local aliases = {
+        ['super_admin'] = 'superadmin',
+        ['superadmin'] = 'superadmin',
+        ['moderador'] = 'moderator'
+    }
+    token = aliases[token] or token
+
+    local rp = Config and Config.Permissions and Config.Permissions.rolePermissions or {}
+    if type(rp) ~= 'table' then
+        return nil
+    end
+
+    for roleName, _ in pairs(rp) do
+        if type(roleName) == 'string' and _NormalizeRoleToken(roleName) == token then
+            return roleName
+        end
+    end
+
+    return nil
+end
+
 -- 
 -- PERMISOS
 -- 
 
 function HasPanelAccess(source)
-    if not source or source <= 0 then return false, nil end
+    if not source or source <= 0 then return false, nil, 'invalid_source' end
 
     -- 
     -- v4.4: PRIORITY 1 - MASTER WHITELIST (Owners del servidor)
@@ -599,7 +667,7 @@ function HasPanelAccess(source)
             for _, playerId in ipairs(playerIds) do
                 for _, masterId in ipairs(masterConfig.masters) do
                     if playerId == masterId then
-                        return true, 'master' -- Acceso total como master
+                        return true, 'master', 'master_whitelist' -- Acceso total como master
                     end
                 end
             end
@@ -612,16 +680,16 @@ function HasPanelAccess(source)
     local aceRoles = Config.Permissions and Config.Permissions.aceRolePermissions or {}
     for _, entry in ipairs(aceRoles) do
         if entry and entry.ace and entry.group and IsPlayerAceAllowed(source, entry.ace) then
-            return true, entry.group
+            return true, entry.group, 'ace_role'
         end
     end
 
     if IsPlayerAceAllowed(source, 'lyxpanel.admin') then
-        return true, 'superadmin'
+        return true, 'superadmin', 'ace_lyxpanel.admin'
     end
 
     if IsPlayerAceAllowed(source, 'lyxpanel.access') then
-        return true, 'admin'
+        return true, 'admin', 'ace_lyxpanel.access'
     end
 
     -- Verificar permisos ACE configurables
@@ -629,11 +697,13 @@ function HasPanelAccess(source)
     for _, p in ipairs(acePerms) do
         if IsPlayerAceAllowed(source, p) then
             if p == 'lyxpanel.admin' then
-                return true, 'superadmin'
+                return true, 'superadmin', 'ace_config_lyxpanel.admin'
             end
-            return true, 'admin'
+            return true, 'admin', ('ace_config_%s'):format(tostring(p))
         end
     end
+
+    local denyReason = 'no_access_rule_matched'
 
     -- -----------------------------------------------------------------------
     -- PRIORITY 2.5 - DB Access List (optional)
@@ -642,11 +712,25 @@ function HasPanelAccess(source)
     local accessCfg = Config and Config.Permissions and Config.Permissions.accessList
     if accessCfg == nil or accessCfg.enabled ~= false then
         local identifier = GetIdentifier(source, 'license')
-        if identifier and LyxPanel and LyxPanel.AccessStore and LyxPanel.AccessStore.GetGroup then
+        if not identifier then
+            denyReason = 'license_identifier_missing'
+        elseif LyxPanel and LyxPanel.AccessStore and LyxPanel.AccessStore.GetGroup then
             local dbGroup = LyxPanel.AccessStore.GetGroup(identifier)
             if dbGroup and dbGroup ~= '' then
-                return true, dbGroup
+                local normalizedGroup = _ResolvePanelRoleName(dbGroup)
+                if normalizedGroup then
+                    return true, normalizedGroup, 'access_list'
+                end
+
+                print(('[LyxPanel][SECURITY] access_list group invalido para %s: "%s" (ignorado)'):format(
+                    tostring(identifier), tostring(dbGroup)
+                ))
+                denyReason = ('access_list_invalid_group:%s'):format(tostring(dbGroup))
+            else
+                denyReason = 'access_list_no_entry'
             end
+        else
+            denyReason = 'access_store_unavailable'
         end
     end
 
@@ -662,7 +746,7 @@ function HasPanelAccess(source)
             if masterConfig and masterConfig.masterGroups then
                 for _, masterGroup in ipairs(masterConfig.masterGroups) do
                     if group == masterGroup then
-                        return true, 'master'
+                        return true, 'master', 'esx_master_group'
                     end
                 end
             end
@@ -671,12 +755,18 @@ function HasPanelAccess(source)
             local allowedGroups = Config.Permissions and Config.Permissions.allowedGroups or
                 { 'superadmin', 'admin', 'mod', 'master', 'owner' }
             for _, g in ipairs(allowedGroups) do
-                if group == g then return true, group end
+                if group == g then return true, group, 'esx_group' end
             end
+
+            denyReason = ('esx_group_not_allowed:%s'):format(tostring(group))
+        else
+            denyReason = 'esx_player_not_ready'
         end
+    else
+        denyReason = 'esx_unavailable'
     end
 
-    return false, nil
+    return false, nil, denyReason
 end
 
 function HasPermission(source, perm)
@@ -1327,6 +1417,108 @@ RegisterCommand('lyxpanel_seed_access', function(source, args, raw)
 
     print(('^2[LyxPanel]^7 Seed access OK: %s => %s'):format(identifier, groupName))
 end, true)
+
+local function _DbTableExists(tableName)
+    local ok, rows = pcall(function()
+        return MySQL.Sync.fetchAll([[
+            SELECT COUNT(*) AS c
+            FROM INFORMATION_SCHEMA.TABLES
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = ?
+        ]], { tableName })
+    end)
+    if not ok then
+        return false, 'query_failed'
+    end
+    local c = rows and rows[1] and tonumber(rows[1].c) or 0
+    return c > 0, nil
+end
+
+local function _RunDbProbe(label, query, params)
+    local ok = pcall(function()
+        MySQL.Sync.fetchAll(query, params or {})
+    end)
+    if ok then
+        print(('^2[LyxPanel][DBCHECK]^7 OK   %s'):format(label))
+    else
+        print(('^1[LyxPanel][DBCHECK]^7 FAIL %s'):format(label))
+    end
+end
+
+RegisterCommand('lyxpanel_dbcheck', function(source)
+    if source ~= 0 then
+        print('^1[LyxPanel]^7 lyxpanel_dbcheck solo puede usarse desde la consola del servidor.')
+        return
+    end
+
+    if not (MySQL and MySQL.Sync and MySQL.Sync.fetchAll) then
+        print('^1[LyxPanel][DBCHECK]^7 MySQL no esta listo.')
+        return
+    end
+
+    local requiredPanelTables = {
+        'lyxpanel_schema_migrations',
+        'lyxpanel_reports',
+        'lyxpanel_report_messages',
+        'lyxpanel_logs',
+        'lyxpanel_notes',
+        'lyxpanel_tickets',
+        'lyxpanel_transactions',
+        'lyxpanel_access_list',
+        'lyxpanel_role_permissions',
+        'lyxpanel_individual_permissions',
+        'lyxpanel_permission_audit'
+    }
+
+    local requiredGuardTables = {
+        'lyxguard_schema_migrations',
+        'lyxguard_detections',
+        'lyxguard_bans',
+        'lyxguard_warnings'
+    }
+
+    local missing = {}
+    for _, tableName in ipairs(requiredPanelTables) do
+        local exists = _DbTableExists(tableName)
+        if not exists then
+            missing[#missing + 1] = tableName
+        end
+    end
+
+    local guardState = GetResourceState('lyx-guard')
+    if guardState == 'started' then
+        for _, tableName in ipairs(requiredGuardTables) do
+            local exists = _DbTableExists(tableName)
+            if not exists then
+                missing[#missing + 1] = tableName
+            end
+        end
+    else
+        print(('^3[LyxPanel][DBCHECK]^7 lyx-guard no esta started (state=%s), se omiten tablas lyxguard_*'):format(
+            tostring(guardState)))
+    end
+
+    if #missing == 0 then
+        print('^2[LyxPanel][DBCHECK]^7 Todas las tablas criticas existen.')
+    else
+        print('^1[LyxPanel][DBCHECK]^7 Tablas faltantes detectadas:')
+        for _, name in ipairs(missing) do
+            print(('  - %s'):format(name))
+        end
+    end
+
+    _RunDbProbe('lyxpanel reports query', "SELECT COUNT(*) AS c FROM lyxpanel_reports WHERE status = 'open'")
+    _RunDbProbe('lyxpanel logs query', 'SELECT COUNT(*) AS c FROM lyxpanel_logs')
+
+    if guardState == 'started' then
+        _RunDbProbe('lyxguard detections query', 'SELECT COUNT(*) AS c FROM lyxguard_detections')
+        _RunDbProbe('lyxguard bans query', 'SELECT COUNT(*) AS c FROM lyxguard_bans WHERE active = 1')
+        _RunDbProbe('lyxguard warnings query', 'SELECT COUNT(*) AS c FROM lyxguard_warnings WHERE active = 1')
+    end
+
+    print('^5[LyxPanel][DBCHECK]^7 Completado.')
+end, true)
+
 -- Exportar la funcin
 exports('GetCustomVehicles', GetCustomVehicles)
 
@@ -1342,8 +1534,17 @@ CreateThread(function()
     end
 
     if not resolved then
-        print('^1[LyxPanel]^7 ESX no disponible (timeout). Callbacks no registrados.')
-        return
+        print('^3[LyxPanel]^7 ESX no disponible (timeout inicial). Reintentando registrar callbacks cada 2s...')
+        while not resolved do
+            Wait(2000)
+            if LyxPanel and LyxPanel.GetESX then
+                resolved = LyxPanel.GetESX()
+            end
+            if not resolved then
+                resolved = ESX or _G.ESX
+            end
+        end
+        print('^2[LyxPanel]^7 ESX detectado tras reintento. Registrando callbacks.')
     end
 
     ESX = resolved
@@ -1357,7 +1558,7 @@ CreateThread(function()
             return
         end
 
-        local access, group = HasPanelAccess(source)
+        local access, group, reason = HasPanelAccess(source)
         DebugPrint('[LyxPanel] HasPanelAccess resultado:', access, group)
 
         if access then
@@ -1398,7 +1599,12 @@ CreateThread(function()
             })
         else
             DebugPrint('[LyxPanel] Acceso denegado para:', source)
-            cb({ access = false })
+            cb({
+                access = false,
+                reason = reason or 'no_access',
+                openCommand = GetOpenCommandName(),
+                openKey = tostring((Config and Config.OpenKey) or 'F6')
+            })
         end
     end)
 
@@ -2497,10 +2703,23 @@ end)
 -- COMANDO PRINCIPAL
 -- 
 
-RegisterCommand(Config.OpenCommand or 'panel', function(source)
-    if source > 0 and HasPanelAccess(source) then
+RegisterCommand(GetOpenCommandName(), function(source)
+    if source <= 0 then
+        print(('^3[LyxPanel]^7 Comando de juego: /%s'):format(GetOpenCommandName()))
+        return
+    end
+
+    local allowed, _, reason = HasPanelAccess(source)
+    if allowed then
         TouchPanelSession(source)
         TriggerClientEvent('lyxpanel:open', source)
+    else
+        TriggerClientEvent('lyxpanel:notify', source, 'error', ('Sin acceso al panel (%s)'):format(tostring(reason or 'no_access')))
+        print(('^3[LyxPanel]^7 Open denied for %s[%d]: %s'):format(
+            tostring(GetPlayerName(source) or 'unknown'),
+            source,
+            tostring(reason or 'no_access')
+        ))
     end
 end, false)
 

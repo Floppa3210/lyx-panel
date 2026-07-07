@@ -44,9 +44,7 @@ files {
     'html/css/*.css',
     'html/js/*.js',
     'html/vendor/fontawesome/css/*.css',
-    'html/vendor/fontawesome/webfonts/*',
-    'html/img/*.png',
-    'html/fonts/*'
+    'html/vendor/fontawesome/webfonts/*'
 }
 
 dependencies {

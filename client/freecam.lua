@@ -213,9 +213,13 @@ end)
 -- ESC to exit freecam
 CreateThread(function()
     while true do
-        Wait(0)
-        if FreecamActive and IsControlJustPressed(0, 200) then -- ESC
-            StopFreecam(false)
+        if FreecamActive then
+            Wait(0)
+            if IsControlJustPressed(0, 200) then -- ESC
+                StopFreecam(false)
+            end
+        else
+            Wait(250)
         end
     end
 end)

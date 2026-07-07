@@ -1,4 +1,4 @@
-﻿/* LyxPanel UI - app.js */
+/* LyxPanel UI - app.js */
 
 let adminPerms = {};
 let uiConfig = {};
