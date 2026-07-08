@@ -196,11 +196,10 @@ lyx-panel/
   CONTRIBUTING.md
 
   client/
-    main.lua              # bridge NUI <-> servidor + comando/keybind
+    main.lua              # bridge NUI <-> servidor + comando/keybind (incl. limpieza de zona + warps personales)
     features_v45.lua      # controles avanzados (vehiculo, teleport, kits...)
     freecam.lua           # camara libre
     spectate.lua          # espectar (dimension-safe)
-    zones.lua             # limpieza de zona + warps personales
     toggles.lua           # estados admin (noclip/godmode/invisible...)
     staff_commands.lua    # revive con E + municion infinita
   server/
