@@ -200,15 +200,10 @@ end
 -- NUI CALLBACK
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-RegisterNUICallback('toggleFreecam', function(data, cb)
-    if not IsNuiFocused() then
-        cb({ active = FreecamActive, ok = false, error = 'panel_not_focused' })
-        return
-    end
-
-    ToggleFreecam()
-    cb({ active = FreecamActive, ok = true })
-end)
+-- NOTA (hardening): el callback NUI 'toggleFreecam' se maneja en client/main.lua, que valida
+-- el estado real del panel (`isOpen`) y rutea por el servidor (`SendSecureServerEvent`).
+-- Se retiro la version duplicada que existia aqui (solo chequeaba `IsNuiFocused()` y, por
+-- orden de carga alfabetico, sobrescribia a la segura de main.lua).
 
 -- ESC to exit freecam
 CreateThread(function()
@@ -224,8 +219,7 @@ CreateThread(function()
     end
 end)
 
--- Export
-exports('ToggleFreecam', ToggleFreecam)
+-- Exports (solo lectura; no se exporta ToggleFreecam para no exponer un toggle sin gate).
 exports('IsFreecamActive', IsFreecamActive)
 exports('GetFreecamPosition', GetFreecamPosition)
 

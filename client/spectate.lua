@@ -194,9 +194,12 @@ CreateThread(function()
     end
 end)
 
--- Export functions
-exports('StartSpectate', Spectate.Start)
-exports('StopSpectate', Spectate.Stop)
+-- Exports
+-- NOTA (hardening): NO se exportan `StartSpectate`/`StopSpectate`. `Spectate.Start` hace
+-- SetEntityCoords a coordenadas arbitrarias + invisible + invencible, asi que exportarla
+-- permitia a un executor teletransportarse/ocultarse llamando el export directamente, sin
+-- pasar por el panel ni por el gate `canSpectate` del servidor. El unico camino valido es el
+-- evento server-driven `lyxpanel:spectate:start` (arriba). Solo se expone la lectura de estado.
 exports('IsSpectating', Spectate.IsActive)
 
 return Spectate

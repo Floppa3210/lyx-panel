@@ -387,6 +387,10 @@ local function _ForwardPanelSessionSpoofDetection(src)
         return
     end
 
+    if not (LyxPanel and LyxPanel.IsLyxGuardAvailable and LyxPanel.IsLyxGuardAvailable()) then
+        return
+    end
+
     if not exports['lyx-guard'] or not exports['lyx-guard'].LogDetection then
         return
     end

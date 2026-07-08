@@ -343,13 +343,13 @@ AddEventHandler('lyxpanel:toggles:set', function(toggleName, state)
     })
 end)
 
--- Export functions
-exports('ToggleGodmode', Toggles.Godmode)
-exports('ToggleInvisible', Toggles.Invisible)
-exports('ToggleNoclip', Toggles.Noclip)
-exports('ToggleSpeedboost', Toggles.Speedboost)
-exports('ToggleNitro', Toggles.Nitro)
-exports('ToggleVehicleGodmode', Toggles.VehicleGodmode)
+-- Exports
+-- NOTA (hardening): NO se exportan las funciones de toggle (godmode/noclip/invisible/
+-- speedboost/nitro/vehicle godmode). Exponerlas dejaba que cualquier resource o executor
+-- las invocara (`exports['lyx-panel']:ToggleGodmode(true)`) obteniendo el cheat sin pasar
+-- por el panel ni por la validacion de permisos del servidor. El unico camino valido es el
+-- driver server-side `lyxpanel:toggles:set` (arriba), que el server dispara tras validar
+-- permiso. Solo se expone la lectura de estado (inocua).
 exports('GetToggleStates', Toggles.GetStates)
 
 return Toggles
